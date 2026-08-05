@@ -18,8 +18,16 @@ CREATE TABLE environments (
 -- с тем, как z2r сам собирает профили через --new). Параметры в JSON, т.к. набор полей разный
 -- для разных family (fake/split/disorder/syndata/...), но ключевые для
 -- частых запросов и уникальности продублированы в обычные колонки.
+--
+-- profile — отдельный пул генома на каждый профиль z2r_autobench
+-- (YT_TLS/GV_TLS/RKN_TLS/DS_TLS/...). Геномы НЕ шарятся между профилями,
+-- даже если rendered_args совпадают дословно — у каждого профиля свои
+-- домены/хостлисты, и то, что работает для YT_TLS, не обязано что-то
+-- значить для RKN_TLS. Поэтому profile — часть дедуп-ключа id, не просто
+-- метка.
 CREATE TABLE genomes (
-    id             CHAR(64) PRIMARY KEY,          -- sha256(rendered_args), естественный дедуп-ключ
+    id             CHAR(64) PRIMARY KEY,          -- sha256(profile || ':' || rendered_args)
+    profile        VARCHAR(32) NOT NULL,          -- 'YT_TLS','GV_TLS','RKN_TLS','DS_TLS','YT_QUIC_UDP','VOICE_UDP','GAMES_UDP','FB_TLS','FB_HTTP'
     filter_type    ENUM('tcp/80','tcp/443','udp/443') NOT NULL,
     family         VARCHAR(64) NOT NULL,          -- 'fake','multisplit','disorder','syndata','hostfakesplit', комбинации через запятую
     fooling        VARCHAR(64) NULL,              -- 'badsum','badseq','datanoack','md5sig', null
@@ -33,6 +41,7 @@ CREATE TABLE genomes (
     mutation_op    VARCHAR(64) NULL,              -- 'mutate_tcp_ttl', 'mutate_tcp_fooling', ... — какой оператор породил
     generation     INT NOT NULL DEFAULT 0,        -- 0 = seed, иначе max(parent.generation)+1
     created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_profile (profile),
     INDEX idx_filter_family (filter_type, family),
     INDEX idx_parent1 (parent1_id),
     INDEX idx_parent2 (parent2_id)
@@ -52,6 +61,15 @@ CREATE TABLE domain_pool (
     added_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_host_path (host, path)
 );
+
+-- Стартовые домены — те же самые, что уже использует z2r_autobench
+-- (rank_strategies.sh) для соответствующих профилей, не новые. GV_TLS
+-- сюда не входит — её тестовый URL резолвится динамически через yt-dlp
+-- (get_gv_test_url), а не фиксированный домен.
+INSERT INTO domain_pool (host, path, profile_hint) VALUES
+    ('www.youtube.com', '/', 'YT_TLS'),
+    ('meduza.io', '/', 'RKN_TLS'),
+    ('discord.com', '/', 'DS_TLS');
 
 -- Каждый прогон генома против домена/окружения — сырая история для скоринга.
 CREATE TABLE experiments (
