@@ -1,3 +1,9 @@
+# Только БД. Сам генератор (orchestrator) работает напрямую на хосте, не
+# в контейнере — ему нужно вызывать set_strategy_cli.sh и трогать
+# локальные файлы z2r_autobench, городить для этого сеть/пробросы внутрь
+# контейнера ради одной команды смысла нет. Этот docker-compose нужен,
+# только если выбран режим ZENITH_DB_MODE=docker (см. .env.example) —
+# если БД уже есть где-то ещё, он вообще не запускается.
 services:
   mysql:
     image: mysql:8.4
@@ -5,14 +11,14 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-change-me-root}"
-      MYSQL_DATABASE: z2r_genome
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-z2r_genome}"
       MYSQL_USER: "${MYSQL_USER:-zenith}"
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:-change-me-app}"
     # Пока только localhost на текущем сервере (см. README) — при переносе
     # на общий доступ для ВМ ростелеком/МТС сюда добавится 0.0.0.0:3306
     # и учётка не-root с ограниченными правами.
     ports:
-      - "127.0.0.1:3306:3306"
+      - "${MYSQL_HOST:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -21,9 +27,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  # orchestrator: генератор/мутатор/UCB-подбор — ещё не реализован,
-  # см. README "Статус" и "Roadmap".
 
 volumes:
   mysql_data:
