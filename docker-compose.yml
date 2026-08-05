@@ -1,0 +1,29 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: zenith-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-change-me-root}"
+      MYSQL_DATABASE: z2r_genome
+      MYSQL_USER: "${MYSQL_USER:-zenith}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-change-me-app}"
+    # Пока только localhost на NETH-4 (см. README) — при переносе на
+    # общий доступ для ВМ ростелеком/МТС сюда добавится 0.0.0.0:3306
+    # и учётка не-root с ограниченными правами.
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # orchestrator: генератор/мутатор/UCB-подбор — ещё не перенесён из
+  # черновика ansp-mvp v2, см. README "Статус" и "Roadmap".
+
+volumes:
+  mysql_data:
