@@ -4,18 +4,18 @@
 CREATE DATABASE IF NOT EXISTS z2r_genome CHARACTER SET utf8mb4;
 USE z2r_genome;
 
--- Точки тестирования: сейчас NETH-4 (дом.ру), позже + ВМ ростелеком/МТС.
+-- Точки тестирования: сейчас прод-сервер (дом.ру), позже + ВМ ростелеком/МТС.
 CREATE TABLE environments (
     id            INT AUTO_INCREMENT PRIMARY KEY,
-    name          VARCHAR(64) NOT NULL UNIQUE,   -- 'neth4-domru', 'vm-rostelecom', 'vm-mts'
+    name          VARCHAR(64) NOT NULL UNIQUE,   -- 'prod-domru', 'vm-rostelecom', 'vm-mts'
     provider      VARCHAR(64) NOT NULL,          -- 'domru', 'rostelecom', 'mts'
-    is_production BOOLEAN NOT NULL DEFAULT FALSE, -- NETH-4 = TRUE, остальные ВМ для рискованных тестов
+    is_production BOOLEAN NOT NULL DEFAULT FALSE, -- прод-сервер = TRUE, остальные ВМ для рискованных тестов
     active        BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Геном одного протокольного блока (tcp/80, tcp/443, udp/443 — по аналогии
--- с ComboBuilder из ansp-mvp). Параметры в JSON, т.к. набор полей разный
+-- с тем, как z2r сам собирает профили через --new). Параметры в JSON, т.к. набор полей разный
 -- для разных family (fake/split/disorder/syndata/...), но ключевые для
 -- частых запросов и уникальности продублированы в обычные колонки.
 CREATE TABLE genomes (
