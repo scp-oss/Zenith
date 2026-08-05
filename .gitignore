@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 *.backup
 venv/
+
+# состояние песочницы — генерится setup_sandbox.sh/start_sandbox.sh
+# на конкретном сервере, не source
+sandbox/queue_num
+sandbox/nfqws2_sandbox.conf
+sandbox/nfqws2_sandbox.pid
+sandbox/nfqws2_sandbox.debug.log
