@@ -85,4 +85,14 @@ sudo ./teardown_sandbox.sh
 - `nfqws2_sandbox.conf.template` — шаблон конфига (в git). Живой
   `nfqws2_sandbox.conf` генерится из него при первом старте и дальше
   переписывается оркестратором под конкретный геном — в git не входит
-  (см. `.gitignore`), как и `queue_num`/`.pid`/`.debug.log`.
+  (см. `.gitignore`), как и `queue_num`/`.pid`/`.debug.log`. **Без
+  комментариев** — `@file` у nfqws2 не поддерживает `#`, весь файл
+  построчно токенизируется как аргументы командной строки, комментарий
+  ловится как "failed to split command line options from file".
+
+  Поля: `__QNUM__` подставляется из `sandbox/queue_num`. `--lua-desync=`/
+  `--filter-*` — то, что оркестратор переписывает под конкретный геном,
+  остальное не трогает. `--user=nobody` — это про то, каким uid работает
+  сам `nfqws2` после привязки к очереди (сброс привилегий, как и в
+  боевом zapret2), не про то, чей трафик перехватывается — это решает
+  iptables-правило из `setup_sandbox.sh` (owner-match по `zenith-sandbox`).
