@@ -1,0 +1,27 @@
+import os
+
+
+def _load_env(path):
+    env = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip()
+    return env
+
+
+ZENITH_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SANDBOX_DIR = os.path.join(ZENITH_DIR, "sandbox")
+_ENV = _load_env(os.path.join(ZENITH_DIR, ".env"))
+
+MYSQL_HOST = os.environ.get("MYSQL_HOST", _ENV.get("MYSQL_HOST", "127.0.0.1"))
+MYSQL_PORT = int(os.environ.get("MYSQL_PORT", _ENV.get("MYSQL_PORT", "3306")))
+MYSQL_USER = os.environ.get("MYSQL_USER", _ENV.get("MYSQL_USER", "zenith"))
+MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", _ENV.get("MYSQL_PASSWORD", ""))
+MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", _ENV.get("MYSQL_DATABASE", "z2r_genome"))
+
+SANDBOX_USER = os.environ.get("SANDBOX_USER", "zenith-sandbox")
