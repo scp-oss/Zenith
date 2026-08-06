@@ -3,5 +3,7 @@
 --daemon
 --pidfile=__ZENITH_DIR__/sandbox/nfqws2_sandbox.pid
 --debug=@__ZENITH_DIR__/sandbox/nfqws2_sandbox.debug.log
+--lua-init=@/opt/zapret2/lua/zapret-lib.lua
+--lua-init=@/opt/zapret2/lua/zapret-antidpi.lua
 --filter-tcp=443 --filter-l7=tls
 --lua-desync=fake:blob=fake_default_tls:ip_ttl=6
