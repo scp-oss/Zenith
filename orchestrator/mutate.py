@@ -52,6 +52,26 @@ def mutate_to_multidisorder(g: Genome) -> Genome:
     )
 
 
+def mutate_to_fakeddisorder(g: Genome) -> Genome:
+    return replace(
+        g, family="fakeddisorder", pos="midsld", fake_payload=None,
+        seqovl=None, nodrop=False,
+        source="mutation", mutation_op="mutate_to_fakeddisorder",
+    )
+
+
+def mutate_add_blob_nodrop(g: Genome) -> Genome:
+    """Только для multisplit/multidisorder -- подмена пейлоада на фейковый
+    blob + nodrop, тот же паттерн, что боевая strategy=5
+    (multisplit:blob=fake_default_tls:...:nodrop)."""
+    if g.family not in ("multisplit", "multidisorder"):
+        return replace(g, source="mutation", mutation_op="mutate_add_blob_nodrop")
+    return replace(
+        g, fake_payload="fake_default_tls", nodrop=True,
+        source="mutation", mutation_op="mutate_add_blob_nodrop",
+    )
+
+
 def mutate_pos(g: Genome) -> Genome:
     cur = g.pos or "2"
     idx = POS_MARKERS.index(cur) if cur in POS_MARKERS else -1
@@ -80,6 +100,8 @@ OPERATORS = {
     "mutate_add_tcp_md5": mutate_add_tcp_md5,
     "mutate_to_multisplit": mutate_to_multisplit,
     "mutate_to_multidisorder": mutate_to_multidisorder,
+    "mutate_to_fakeddisorder": mutate_to_fakeddisorder,
+    "mutate_add_blob_nodrop": mutate_add_blob_nodrop,
     "mutate_pos": mutate_pos,
     "mutate_seqovl": mutate_seqovl,
 }
@@ -87,17 +109,23 @@ OPERATORS = {
 # Порядок эскалации со слов автора z2r: TTL не проходит -> autottl -> DPI
 # научился детектить кривой TTL -> tcp_ts -> tcp_ts ломает сайты ->
 # tcp_md5(+seqovl) -> известные фейки палятся -> сегментация (multisplit/
-# multidisorder). Не жёсткая ветка, а приоритет: применяется как более
-# высокая стартовая оценка для UCB, а не единственный разрешённый путь.
+# multidisorder/fakeddisorder). Не жёсткая ветка, а приоритет: применяется
+# как более высокая стартовая оценка для UCB, а не единственный
+# разрешённый путь. mutate_to_fakeddisorder/mutate_add_blob_nodrop
+# добавлены после живой проверки 2026-08-06 -- боевая strategy=5
+# (multisplit+blob+nodrop, затем fakeddisorder) сработала там, где 4
+# более простых сгенерированных генома подряд провалились.
 ESCALATION_ORDER = [
     "mutate_ttl_fixed",
     "mutate_ttl_autottl",
     "mutate_add_tcp_ts",
     "mutate_add_tcp_md5",
     "mutate_to_multisplit",
+    "mutate_add_blob_nodrop",
     "mutate_pos",
     "mutate_seqovl",
     "mutate_to_multidisorder",
+    "mutate_to_fakeddisorder",
 ]
 
 

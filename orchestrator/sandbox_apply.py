@@ -11,7 +11,12 @@ CONF_PATH = f"{config.SANDBOX_DIR}/nfqws2_sandbox.conf"
 _REWRITE_PREFIXES = ("--filter-tcp=", "--filter-udp=", "--filter-l7=", "--lua-desync=")
 
 
-def apply_genome(g) -> bool:
+def apply_raw(profile_filter: str, lua_desync_lines: list) -> bool:
+    """Применяет произвольный набор строк (фильтр + один или несколько
+    --lua-desync=), минуя Genome — нужен для control-геномов при проверке
+    подозрения на бан (см. main.py), которые могут быть многоинстансными
+    (как реальная боевая strategy=5: multisplit+fakeddisorder), а текущая
+    модель Genome одноинстансная."""
     try:
         with open(CONF_PATH) as f:
             lines = f.readlines()
@@ -22,7 +27,9 @@ def apply_genome(g) -> bool:
         )
 
     kept = [ln for ln in lines if not ln.strip().startswith(_REWRITE_PREFIXES)]
-    kept.append(g.render_profile_block() + "\n")
+    kept.append(profile_filter + "\n")
+    for line in lua_desync_lines:
+        kept.append(line + "\n")
 
     with open(CONF_PATH, "w") as f:
         f.writelines(kept)
@@ -32,3 +39,8 @@ def apply_genome(g) -> bool:
         capture_output=True, text=True, timeout=15,
     )
     return result.returncode == 0
+
+
+def apply_genome(g) -> bool:
+    filt, lua_line = g.render_profile_block().split("\n", 1)
+    return apply_raw(filt, [lua_line])

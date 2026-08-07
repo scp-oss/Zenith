@@ -23,6 +23,7 @@ import random
 import sys
 import time
 
+import controls
 import db
 import mutate
 import sandbox_apply
@@ -64,6 +65,29 @@ def check_ban_suspected(conn, domain_id) -> bool:
     all_failed = all(not r["success"] for r in recent)
     distinct_genomes = len({r["genome_id"] for r in recent})
     return all_failed and distinct_genomes >= 2
+
+
+def verify_not_false_positive(profile: str, domain: dict) -> bool:
+    """N разных геномов подряд проваливаются на одном домене — само по
+    себе неоднозначно: может быть реальный бан, а может просто наши
+    кандидаты слабые против конкретной DPI (см. живой случай 2026-08-06:
+    4 сгенерированных генома подряд провалились, а боевая strategy=5
+    тут же сработала). Перед тем как объявлять бан — прогоняем control
+    (заведомо рабочий боевой геном). Возвращает True, если control
+    сработал (значит НЕ бан, ложное срабатывание) — иначе True тоже
+    возвращается при отсутствии control'а для профиля (нечем проверить,
+    остаёмся при консервативном "похоже на бан")."""
+    control = controls.get_control(profile)
+    if not control:
+        print(f"  (нет control-генома для {profile}, проверить не могу)", file=sys.stderr)
+        return False
+    if not sandbox_apply.apply_raw(controls.PROFILE_FILTER, control):
+        print("  не удалось применить control в песочнице", file=sys.stderr)
+        return False
+    time.sleep(BASE_SETTLE_SECONDS)
+    success, bytes_, _ = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+    print(f"  control-проверка: {'OK' if success else 'fail'} ({bytes_} bytes)")
+    return success
 
 
 def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
@@ -116,12 +140,16 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
         print(f"  -> {'OK' if success else 'fail'} ({bytes_} bytes, {latency_ms}ms), домен={domain['host']}")
 
         if check_ban_suspected(conn, domain["id"]):
-            reason = f"{CONSECUTIVE_FAIL_BAN_THRESHOLD} разных геномов подряд провалились на {domain['host']}"
-            db.log_ban_event(conn, env_id, domain["id"], reason, BAN_COOLDOWN_SECONDS)
-            print(f"  ПОДОЗРЕНИЕ НА БАН: {reason} — пауза {BAN_COOLDOWN_SECONDS}s.", file=sys.stderr)
-            time.sleep(BAN_COOLDOWN_SECONDS)
-            settle = BASE_SETTLE_SECONDS
-            continue
+            print(f"  {CONSECUTIVE_FAIL_BAN_THRESHOLD} разных геномов подряд провалились на {domain['host']} — проверяю control перед выводом о бане...")
+            if verify_not_false_positive(profile, domain):
+                print("  control сработал — не бан, просто слабые кандидаты подряд. Продолжаю без паузы.")
+            else:
+                reason = f"{CONSECUTIVE_FAIL_BAN_THRESHOLD} разных геномов подряд провалились на {domain['host']}, control тоже не прошёл/недоступен"
+                db.log_ban_event(conn, env_id, domain["id"], reason, BAN_COOLDOWN_SECONDS)
+                print(f"  ПОДОЗРЕНИЕ НА БАН ПОДТВЕРЖДЕНО: {reason} — пауза {BAN_COOLDOWN_SECONDS}s.", file=sys.stderr)
+                time.sleep(BAN_COOLDOWN_SECONDS)
+                settle = BASE_SETTLE_SECONDS
+                continue
 
         settle = BASE_SETTLE_SECONDS if success else min(MAX_SETTLE_SECONDS, settle * 2)
 

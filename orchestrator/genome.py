@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
-FAMILIES = ("fake", "multisplit", "multidisorder")
+FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder")
 
 # Same filter target for every profile right now (all current seed
 # domains are TLS/443) -- becomes per-profile if a UDP/HTTP profile joins.
@@ -36,9 +36,10 @@ class Genome:
     family: str                          # fake | multisplit | multidisorder
     fooling: Optional[str] = None        # 'tcp_md5' | 'tcp_ts=-1' | combo joined by ':' | None
     ttl_mode: Optional[str] = None        # 'fixed:6' | 'autottl:1,3-64' | None
-    fake_payload: Optional[str] = None    # blob name, only meaningful for family=fake
-    pos: Optional[str] = None             # split marker, only for multisplit/multidisorder
+    fake_payload: Optional[str] = None    # blob name -- for family=fake, or optional blob= on multisplit/multidisorder
+    pos: Optional[str] = None             # split marker -- multisplit/multidisorder/fakeddisorder
     seqovl: Optional[str] = None          # only for multisplit/multidisorder
+    nodrop: bool = False                  # only for multisplit/multidisorder -- confirmed real usage: strategy=5 combines this with blob=
     source: str = "seed"                  # seed | mutation | crossover
     parent1_id: Optional[str] = None
     parent2_id: Optional[str] = None
@@ -61,8 +62,14 @@ class Genome:
             head = f"fake:blob={self.fake_payload or 'fake_default_tls'}"
         elif self.family in ("multisplit", "multidisorder"):
             head = f"{self.family}:pos={self.pos or '2'}"
+            if self.fake_payload:
+                head += f":blob={self.fake_payload}"
             if self.seqovl:
                 head += f":seqovl={self.seqovl}"
+            if self.nodrop:
+                head += ":nodrop"
+        elif self.family == "fakeddisorder":
+            head = f"fakeddisorder:pos={self.pos or 'midsld'}"
         else:
             raise ValueError(f"unknown family: {self.family}")
 
@@ -87,6 +94,7 @@ class Genome:
                 "fake_payload": self.fake_payload,
                 "pos": self.pos,
                 "seqovl": self.seqovl,
+                "nodrop": self.nodrop,
             },
             ensure_ascii=False,
         )
