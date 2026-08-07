@@ -12,9 +12,40 @@ from typing import Optional
 
 FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder", "hostfakesplit")
 
-# Same filter target for every profile right now (all current seed
-# domains are TLS/443) -- becomes per-profile if a UDP/HTTP profile joins.
-PROFILE_FILTER = "--filter-tcp=443 --filter-l7=tls"
+# Реальные боевые фильтры per-профиль -- сверено построчно с
+# /opt/zapret2/config, 2026-08-07, ПОСЛЕ живого инцидента: песочница до
+# этого держала один фиксированный узкий --filter-tcp=443 --filter-l7=tls
+# без --hostlist=/--payload= для ВСЕХ профилей, из-за чего продвинутый в
+# прод геном (RKN_TLS strategy=43, hostfakesplit) прошёл 13/13 в песочнице,
+# но провалился на meduza.io в реальном трафике (см. README "Известный
+# разрыв достоверности песочницы"). --qnum 300 у боевого YT-блока НЕ
+# включён -- песочница держит свой qnum отдельно
+# (sandbox/nfqws2_sandbox.conf.template), это не часть фильтра как такового.
+PROFILE_FILTERS = {
+    "YT_TLS": [
+        "--filter-tcp=443 --filter-l7=tls",
+        "--hostlist=/opt/zapret2/extra_strats/TCP_YT_list.txt",
+        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
+    ],
+    "RKN_TLS": [
+        "--filter-tcp=80,443,2053,2083,2087,2096,8443 --filter-l7=tls",
+        "--hostlist=/opt/zapret2/extra_strats/TCP_RKN_list.txt",
+        "--hostlist=/opt/zapret2/extra_strats/TCP_Custom.txt",
+        "--hostlist-exclude=/opt/zapret2/extra_strats/TCP_Discord.txt",
+        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
+    ],
+    # DS_TLS в реальном конфиге НЕ содержит --filter-l7=tls в своей
+    # --filter-tcp= строке (в отличие от YT/RKN) -- воспроизведено как
+    # есть, это реальный боевой конфиг, не опечатка, которую надо "исправить".
+    "DS_TLS": [
+        "--filter-tcp=80,443,2053,2083,2087,2096,8443",
+        "--hostlist=/opt/zapret2/extra_strats/TCP_Discord.txt",
+        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
+    ],
+}
 
 STANDARD_BLOBS = ("fake_default_tls", "fake_default_http", "fake_default_quic")
 
@@ -109,9 +140,6 @@ class Genome:
         if extra:
             head += ":" + ":".join(extra)
         return f"--lua-desync={head}"
-
-    def render_profile_block(self) -> str:
-        return f"{PROFILE_FILTER}\n{self.render_args()}"
 
     def compute_id(self) -> str:
         payload = f"{self.profile}:{self.render_args()}"

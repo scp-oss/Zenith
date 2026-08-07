@@ -1,22 +1,32 @@
-"""Применяет геном в песочнице: переписывает только строки фильтра и
---lua-desync= в живом конфиге (qnum/user/daemon/pidfile/debug не трогает)
-и дёшево перезапускает изолированный nfqws2 через sandbox/start_sandbox.sh.
-Боевой /opt/zapret2 этот модуль не видит вообще.
+"""Применяет геном в песочнице: переписывает только строки фильтра
+(--filter-tcp=/--filter-udp=/--filter-l7=/--hostlist=/--hostlist-exclude=/
+--hostlist-domains=/--payload=) и --lua-desync= в живом конфиге
+(qnum/user/daemon/pidfile/debug/lua-init/--blob= не трогает) и дёшево
+перезапускает изолированный nfqws2 через sandbox/start_sandbox.sh. Боевой
+/opt/zapret2 этот модуль не видит вообще.
 """
 import subprocess
 
 import config
+import genome
 
 CONF_PATH = f"{config.SANDBOX_DIR}/nfqws2_sandbox.conf"
-_REWRITE_PREFIXES = ("--filter-tcp=", "--filter-udp=", "--filter-l7=", "--lua-desync=")
+_REWRITE_PREFIXES = (
+    "--filter-tcp=", "--filter-udp=", "--filter-l7=",
+    "--hostlist=", "--hostlist-exclude=", "--hostlist-domains=",
+    "--payload=", "--lua-desync=",
+)
 
 
-def apply_raw(profile_filter: str, lua_desync_lines: list) -> bool:
+def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
     """Применяет произвольный набор строк (фильтр + один или несколько
     --lua-desync=), минуя Genome — нужен для control-геномов при проверке
     подозрения на бан (см. main.py), которые могут быть многоинстансными
     (как реальная боевая strategy=5: multisplit+fakeddisorder), а текущая
-    модель Genome одноинстансная."""
+    модель Genome одноинстансная. profile_filter_lines -- список строк
+    (см. genome.PROFILE_FILTERS), не одна строка: реальный боевой фильтр
+    профиля -- это несколько --hostlist=/--payload= строк, не только
+    --filter-tcp=."""
     try:
         with open(CONF_PATH) as f:
             lines = f.readlines()
@@ -27,7 +37,8 @@ def apply_raw(profile_filter: str, lua_desync_lines: list) -> bool:
         )
 
     kept = [ln for ln in lines if not ln.strip().startswith(_REWRITE_PREFIXES)]
-    kept.append(profile_filter + "\n")
+    for line in profile_filter_lines:
+        kept.append(line + "\n")
     for line in lua_desync_lines:
         kept.append(line + "\n")
 
@@ -42,5 +53,4 @@ def apply_raw(profile_filter: str, lua_desync_lines: list) -> bool:
 
 
 def apply_genome(g) -> bool:
-    filt, lua_line = g.render_profile_block().split("\n", 1)
-    return apply_raw(filt, [lua_line])
+    return apply_raw(genome.PROFILE_FILTERS[g.profile], [g.render_args()])

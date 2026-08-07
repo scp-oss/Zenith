@@ -105,7 +105,7 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
     if not control:
         print(f"  (нет control-генома для {profile}, проверить не могу)", file=sys.stderr)
         return False
-    if not sandbox_apply.apply_raw(controls.PROFILE_FILTER, control):
+    if not sandbox_apply.apply_raw(genome_mod.PROFILE_FILTERS[profile], control):
         print("  не удалось применить control в песочнице", file=sys.stderr)
         return False
     time.sleep(BASE_SETTLE_SECONDS)

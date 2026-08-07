@@ -24,6 +24,7 @@ import time
 
 import controls
 import db
+import genome as genome_mod
 import sandbox_apply
 import scoring
 import tester
@@ -32,8 +33,8 @@ TOP_N = 3
 SETTLE_SECONDS = 3
 
 
-def measure(conn, env_id: int, gid: str, lua_lines: list, domains: list, trials_per_domain: int) -> dict:
-    if not sandbox_apply.apply_raw(controls.PROFILE_FILTER, lua_lines):
+def measure(conn, env_id: int, gid: str, filter_lines: list, lua_lines: list, domains: list, trials_per_domain: int) -> dict:
+    if not sandbox_apply.apply_raw(filter_lines, lua_lines):
         print("  не удалось применить в песочнице", file=sys.stderr)
         return {}
     time.sleep(SETTLE_SECONDS)
@@ -83,6 +84,7 @@ def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
         print(f"Нет доменов для {profile}", file=sys.stderr)
         return 1
     print(f"Домены для сравнения: {', '.join(d['host'] for d in domains)} (x{trials} попыток каждый)")
+    filter_lines = genome_mod.PROFILE_FILTERS[profile]
 
     control = controls.get_control(profile)
     print("\n=== control (боевой, ручной) ===")
@@ -90,7 +92,7 @@ def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
         for line in control:
             print(f"  {line}")
         control_gid = db.insert_control_genome(conn, profile, control)
-        summarize("control", measure(conn, env_id, control_gid, control, domains, trials))
+        summarize("control", measure(conn, env_id, control_gid, filter_lines, control, domains, trials))
     else:
         print(f"  нет control-генома для {profile}, сравнивать не с чем", file=sys.stderr)
 
@@ -118,7 +120,7 @@ def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
     print(f"\n=== топ-{len(top)} сгенерированных Zenith (по накопленному avg_score) ===")
     for row in top:
         print(f"\n  {row['rendered_args']}  (было пулов={row['pulls']}, успехов={row['successes']}, avg_score={row['avg_score']})")
-        summarize("generated", measure(conn, env_id, row["id"], [row["rendered_args"]], domains, trials))
+        summarize("generated", measure(conn, env_id, row["id"], filter_lines, [row["rendered_args"]], domains, trials))
 
     conn.close()
     return 0
