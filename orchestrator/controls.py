@@ -22,13 +22,17 @@ CONTROLS = {
         "--lua-desync=multisplit:blob=fake_default_tls:tcp_ts=-1000:pos=2:nodrop",
         "--lua-desync=fakeddisorder:pos=midsld:tcp_ts=-1000",
     ],
-    # RKN_TLS: боевая strategy=1 (см. /opt/zapret2/config), 2026-08-07.
-    # pos=1,midsld -- список из ДВУХ маркеров, наша модель Genome такое
-    # пока не генерирует (см. mutate.py TODO), но control -- сырые строки,
-    # ему это ограничение не мешает.
+    # RKN_TLS: strategy=1 (fake:...:repeats=2 + multisplit:pos=1,midsld) --
+    # ОШИБКА, исправлено 2026-08-07. Это была не боевая RKN-стратегия, а
+    # просто strategy=1 из ОБЩЕГО шаблона z2r_tcp_tls_common, который через
+    # --import=z2r_tcp_tls_common расшарен между YT_TLS/GV_TLS/RKN_TLS --
+    # один и тот же список strategy=1..42, каждый профиль просто держит
+    # свой --lua-desync=circular_locked:key=N (YT=1, GV=2, RKN=3) с выбором
+    # СВОЕГО текущего номера. Реально залоченная для RKN -- strategy=3
+    # (проверено `set_strategy_cli.sh get 3 tls` -> "3").
     "RKN_TLS": [
-        "--lua-desync=fake:blob=fake_default_tls:tcp_ts=-1000:repeats=2",
-        "--lua-desync=multisplit:pos=1,midsld",
+        "--lua-desync=multisplit:blob=fake_default_tls:tcp_ts=-500:pos=2:nodrop",
+        "--lua-desync=fakeddisorder:pos=midsld:tcp_ts=-500",
     ],
 }
 
