@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import mysql.connector
 import config
 
@@ -37,6 +40,27 @@ def get_domains_for_profile(conn, profile: str):
     return cur.fetchall()
 
 
+def insert_control_genome(conn, profile: str, lines: list) -> str:
+    """Control-геном (боевая ручная стратегия, см. controls.py) как
+    отдельная запись в genomes: family='control', source='manual' --
+    чтобы его успешность копилась в genome_scores так же, как у
+    сгенерированных геномов, а не терялась после разового прогона
+    compare_control.py, и её можно было честно сравнить в БД, а не
+    только в момент вывода на экран. rendered_args -- склеенные строкой
+    через \\n все инстансы (control часто многоинстансный)."""
+    rendered = "\n".join(lines)
+    gid = hashlib.sha256(f"{profile}:{rendered}".encode()).hexdigest()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT IGNORE INTO genomes
+           (id, profile, filter_type, family, fooling, ttl_mode, fake_payload,
+            params_json, rendered_args, source, generation)
+           VALUES (%s,%s,'tcp/443','control',NULL,NULL,NULL,%s,%s,'manual',0)""",
+        (gid, profile, json.dumps({"lines": lines}, ensure_ascii=False), rendered),
+    )
+    return gid
+
+
 def insert_genome(conn, g) -> str:
     gid = g.compute_id()
     cur = conn.cursor()
@@ -68,13 +92,17 @@ def record_experiment(conn, genome_id, environment_id, domain_id, success, bytes
 def get_genomes_with_scores(conn, profile: str, environment_id: int):
     """Для genome-level UCB в main.py -- все геномы профиля, которые уже
     хоть раз пробовались в этом окружении, с накопленной статистикой
-    (не только сиды, но и любые ранее сгенерированные мутанты)."""
+    (не только сиды, но и любые ранее сгенерированные мутанты).
+    family != 'control' обязателен: control-геномы (см.
+    insert_control_genome) хранят params_json={'lines': [...]}, а не
+    поля Genome -- genome.from_params() упадёт, если UCB попробует их
+    как родителя для мутации."""
     cur = conn.cursor(dictionary=True)
     cur.execute(
         """SELECT g.params_json, g.generation, gs.pulls, gs.total_reward
            FROM genome_scores gs
            JOIN genomes g ON g.id = gs.genome_id AND g.profile = %s
-           WHERE gs.environment_id = %s AND gs.pulls > 0""",
+           WHERE gs.environment_id = %s AND gs.pulls > 0 AND g.family != 'control'""",
         (profile, environment_id),
     )
     return cur.fetchall()

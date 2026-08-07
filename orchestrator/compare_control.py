@@ -9,6 +9,13 @@ nfqws2 сам по себе добавляет джиттер в latency), за�
 ничего в среднем. Единичный замер success/latency слишком шумный, чтобы
 на нём делать вывод "превзошли" или нет.
 
+Каждая попытка (control и сгенерированных) пишется в experiments/
+genome_scores так же, как обычные раунды main.py — иначе успешность
+боевой стратегии нигде не копится и каждый прогон этого скрипта начинает
+с нуля. Control хранится в genomes как family='control' (см.
+db.insert_control_genome), поэтому запрос топа сгенерированных явно
+исключает family='control', чтобы не сравнивать control сам с собой.
+
     python3 compare_control.py --profile RKN_TLS --trials 5
 """
 import argparse
@@ -18,13 +25,14 @@ import time
 import controls
 import db
 import sandbox_apply
+import scoring
 import tester
 
 TOP_N = 3
 SETTLE_SECONDS = 3
 
 
-def measure(lua_lines: list, domains: list, trials_per_domain: int) -> dict:
+def measure(conn, env_id: int, gid: str, lua_lines: list, domains: list, trials_per_domain: int) -> dict:
     if not sandbox_apply.apply_raw(controls.PROFILE_FILTER, lua_lines):
         print("  не удалось применить в песочнице", file=sys.stderr)
         return {}
@@ -32,10 +40,14 @@ def measure(lua_lines: list, domains: list, trials_per_domain: int) -> dict:
 
     per_domain = {}
     for domain in domains:
-        per_domain[domain["host"]] = [
-            tester.probe(domain["host"], domain["path"], domain["min_bytes"])
-            for _ in range(trials_per_domain)
-        ]
+        results = []
+        for _ in range(trials_per_domain):
+            success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+            reward = scoring.compute_reward(success, latency_ms)
+            db.record_experiment(conn, gid, env_id, domain["id"], success, bytes_, latency_ms)
+            db.upsert_genome_score(conn, gid, env_id, success, reward)
+            results.append((success, bytes_, latency_ms))
+        per_domain[domain["host"]] = results
     return per_domain
 
 
@@ -62,8 +74,10 @@ def summarize(name: str, per_domain: dict) -> None:
     print(f"  {name} ИТОГО: {total_ok}/{total_n} OK, avg_bytes={total_bytes / total_n:.0f}, avg_latency={overall_lat}")
 
 
-def run(profile: str, trials: int) -> int:
+def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
     conn = db.connect()
+    env_id = db.get_or_create_environment(conn, environment_name, provider)
+
     domains = db.get_domains_for_profile(conn, profile)
     if not domains:
         print(f"Нет доменов для {profile}", file=sys.stderr)
@@ -75,7 +89,8 @@ def run(profile: str, trials: int) -> int:
     if control:
         for line in control:
             print(f"  {line}")
-        summarize("control", measure(control, domains, trials))
+        control_gid = db.insert_control_genome(conn, profile, control)
+        summarize("control", measure(conn, env_id, control_gid, control, domains, trials))
     else:
         print(f"  нет control-генома для {profile}, сравнивать не с чем", file=sys.stderr)
 
@@ -86,6 +101,7 @@ def run(profile: str, trials: int) -> int:
                   ROUND(SUM(gs.total_reward) / NULLIF(SUM(gs.pulls), 0), 3) AS avg_score
            FROM genome_scores gs
            JOIN genomes g ON g.id = gs.genome_id AND g.profile = %s
+           WHERE g.family != 'control'
            GROUP BY g.id, g.rendered_args
            HAVING successes > 0
            ORDER BY avg_score DESC
@@ -93,17 +109,18 @@ def run(profile: str, trials: int) -> int:
         (profile, TOP_N),
     )
     top = cur.fetchall()
-    conn.close()
 
     if not top:
         print("\nНет успешных сгенерированных геномов в БД для этого профиля ещё.")
+        conn.close()
         return 0
 
     print(f"\n=== топ-{len(top)} сгенерированных Zenith (по накопленному avg_score) ===")
     for row in top:
         print(f"\n  {row['rendered_args']}  (было пулов={row['pulls']}, успехов={row['successes']}, avg_score={row['avg_score']})")
-        summarize("generated", measure([row["rendered_args"]], domains, trials))
+        summarize("generated", measure(conn, env_id, row["id"], [row["rendered_args"]], domains, trials))
 
+    conn.close()
     return 0
 
 
@@ -111,5 +128,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS"])
     ap.add_argument("--trials", type=int, default=5, help="попыток НА КАЖДЫЙ домен профиля")
+    ap.add_argument("--environment", default="prod-domru")
+    ap.add_argument("--provider", default="domru")
     args = ap.parse_args()
-    sys.exit(run(args.profile, args.trials))
+    sys.exit(run(args.profile, args.trials, args.environment, args.provider))

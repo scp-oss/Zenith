@@ -88,7 +88,7 @@ def check_ban_suspected(conn, domain_id) -> bool:
     return all_failed and distinct_genomes >= 2
 
 
-def verify_not_false_positive(profile: str, domain: dict) -> bool:
+def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> bool:
     """N разных геномов подряд проваливаются на одном домене — само по
     себе неоднозначно: может быть реальный бан, а может просто наши
     кандидаты слабые против конкретной DPI (см. живой случай 2026-08-06:
@@ -97,7 +97,10 @@ def verify_not_false_positive(profile: str, domain: dict) -> bool:
     (заведомо рабочий боевой геном). Возвращает True, если control
     сработал (значит НЕ бан, ложное срабатывание) — иначе True тоже
     возвращается при отсутствии control'а для профиля (нечем проверить,
-    остаёмся при консервативном "похоже на бан")."""
+    остаёмся при консервативном "похоже на бан"). Результат пишется в
+    experiments/genome_scores как обычный прогон (family='control') --
+    иначе успешность боевой стратегии нигде не копится, кроме разовых
+    ручных прогонов compare_control.py."""
     control = controls.get_control(profile)
     if not control:
         print(f"  (нет control-генома для {profile}, проверить не могу)", file=sys.stderr)
@@ -106,8 +109,13 @@ def verify_not_false_positive(profile: str, domain: dict) -> bool:
         print("  не удалось применить control в песочнице", file=sys.stderr)
         return False
     time.sleep(BASE_SETTLE_SECONDS)
-    success, bytes_, _ = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+    success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
     print(f"  control-проверка: {'OK' if success else 'fail'} ({bytes_} bytes)")
+
+    control_gid = db.insert_control_genome(conn, profile, control)
+    db.record_experiment(conn, control_gid, env_id, domain["id"], success, bytes_, latency_ms)
+    db.upsert_genome_score(conn, control_gid, env_id, success, scoring.compute_reward(success, latency_ms))
+
     return success
 
 
@@ -175,7 +183,7 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
         if round_no - last_ban_check_round >= CHECK_COOLDOWN_ROUNDS and check_ban_suspected(conn, domain["id"]):
             last_ban_check_round = round_no
             print(f"  {CONSECUTIVE_FAIL_BAN_THRESHOLD} разных геномов подряд провалились на {domain['host']} — проверяю control перед выводом о бане...")
-            if verify_not_false_positive(profile, domain):
+            if verify_not_false_positive(conn, env_id, profile, domain):
                 print("  control сработал — не бан, просто слабые кандидаты подряд. Продолжаю без паузы.")
             else:
                 reason = f"{CONSECUTIVE_FAIL_BAN_THRESHOLD} разных геномов подряд провалились на {domain['host']}, control тоже не прошёл/недоступен"
