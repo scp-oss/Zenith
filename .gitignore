@@ -1,5 +1,4 @@
 .env
-sandbox/voice.env
 __pycache__/
 *.pyc
 *.backup

@@ -160,17 +160,20 @@ VOICE_UDP-геномы сам, тем же циклом, что и TCP-проф�
   процесса с одним токеном одновременно на gateway рвут сессию друг
   другу. Тот же тестовый голосовой канал (`GUILD_ID`/
   `TEST_VOICE_CHANNEL_ID` из `.env` бота), пересоздавать не нужно.
-  Настройка -- `sandbox/voice.env.example` → `sandbox/voice.env`,
-  права `640 root:zenith-sandbox` (отдельно от `.env` -- там
-  `MYSQL_PASSWORD`, sandbox-юзеру видеть его незачем).
+  Настройка -- `ZENITH_DISCORD_TOKEN`/`ZENITH_GUILD_ID`/
+  `ZENITH_VOICE_CHANNEL_ID` в основном `.env` (см. `.env.example`).
+  **Компромисс по явному запросу**: `voice_probe.py` запускается от
+  имени `zenith-sandbox` и читает тот же `.env`, где лежит
+  `MYSQL_PASSWORD` -- значит sandbox-юзер получает доступ на чтение и к
+  паролю БД. Изначально были разнесены по разным файлам именно чтобы
+  этого избежать; если это важно — вернуть отдельный файл несложно.
 - `setup_sandbox.sh` теперь ставит iptables-правило и для UDP тоже (была
   только TCP), на тот же номер очереди -- один nfqws2 обрабатывает оба
   протокола сразу.
 
 ```bash
-cp sandbox/voice.env.example sandbox/voice.env
-# заполнить ZENITH_DISCORD_TOKEN/ZENITH_GUILD_ID/ZENITH_VOICE_CHANNEL_ID
-sudo chown root:zenith-sandbox sandbox/voice.env && sudo chmod 640 sandbox/voice.env
+# в .env: заполнить ZENITH_DISCORD_TOKEN/ZENITH_GUILD_ID/ZENITH_VOICE_CHANNEL_ID
+sudo chown root:zenith-sandbox .env && sudo chmod 640 .env
 
 sudo ./sandbox/setup_sandbox.sh   # повторно, подхватит UDP-правило если юзер/очередь уже есть
 cd orchestrator

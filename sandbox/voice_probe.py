@@ -11,9 +11,11 @@ z2r_test-voice-bot/bot.py (test_voice_connection): реальный voice gatewa
 handshake + UDP IP discovery, держим HOLD_SECONDS, проверяем
 is_connected(). Не переизобретаем протокол, используем ту же discord.py.
 
-Настройки -- ИЗ ОТДЕЛЬНОГО файла sandbox/voice.env (не .env — там же
-MYSQL_PASSWORD, sandbox-юзеру незачем иметь к нему доступ). Формат тот
-же простой KEY=VALUE, что и .env.
+Настройки -- из основного .env (корень Zenith, рядом с MYSQL_*). Значит
+zenith-sandbox (от чьего имени запускается этот скрипт) получает доступ
+на чтение и к MYSQL_PASSWORD в том же файле -- осознанный компромисс по
+явному запросу, не дефолт по соображениям безопасности (см. git-историю,
+изначально был отдельный sandbox/voice.env).
 
     ZENITH_DISCORD_TOKEN=...
     ZENITH_GUILD_ID=...
@@ -28,7 +30,7 @@ import sys
 import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-VOICE_ENV_PATH = os.path.join(SCRIPT_DIR, "voice.env")
+VOICE_ENV_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), ".env")
 
 
 def _load_env(path):
