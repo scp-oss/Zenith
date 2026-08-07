@@ -18,6 +18,17 @@ PROFILE_FILTER = "--filter-tcp=443 --filter-l7=tls"
 
 STANDARD_BLOBS = ("fake_default_tls", "fake_default_http", "fake_default_quic")
 
+# TLS ClientHello блобы для TCP/443 TLS-профилей -- реально объявлены в
+# боевом конфиге (--blob=..., подтверждено 2026-08-07) и продублированы
+# в sandbox/nfqws2_sandbox.conf.template, иначе nfqws2 откажется стартовать
+# с неизвестным именем блоба. НЕ включает UDP/другой-протокол блобы
+# (stun_fake/blob_rdp/fakewgblob/discord_udp_*/QUIC-блобы -- не для
+# filter-tcp=443 --filter-l7=tls) и НЕ включает tls_client_hello_clone
+# clone_*-блобы -- те требуют вживую снятого хэндшейка именно с целевого
+# домена и молча no-op'ят, если не сняты (см. CLAUDE.md z2r_autobench,
+# реальный инцидент).
+TLS_FAKE_BLOBS = ("fake_default_tls", "maxru", "google_www", "tls4", "custom", "tls5")
+
 
 def render_ttl(ttl_mode: Optional[str]) -> Optional[str]:
     if not ttl_mode:

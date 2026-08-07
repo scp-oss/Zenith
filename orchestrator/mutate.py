@@ -8,6 +8,8 @@ short and meaningful, not "every possible parameter combination".
 """
 import copy
 from dataclasses import replace
+
+import genome
 from genome import Genome
 
 # Полный набор маркеров позиции из манула zapret2 (числовые + логические
@@ -145,6 +147,32 @@ def mutate_pos_combine(g: Genome) -> Genome:
     return replace(g, pos="1,midsld", source="mutation", mutation_op="mutate_pos_combine")
 
 
+def mutate_fake_payload(g: Genome) -> Genome:
+    """Легенда о том, что конкретный blob= может улучшить/ухудшить обход
+    (DPI мог обучиться сигнатуре распространённого блоба), звучит
+    правдоподобно, но непроверена -- этот оператор даёт генератору шанс
+    подтвердить/опровергнуть её эмпирически вместо гадания. Список --
+    genome.TLS_FAKE_BLOBS, реально объявленные в боевом конфиге блобы, не
+    выдуманные имена."""
+    if g.family not in ("fake", "multisplit", "multidisorder"):
+        return replace(g, source="mutation", mutation_op="mutate_fake_payload")
+    cur = g.fake_payload or "fake_default_tls"
+    blobs = genome.TLS_FAKE_BLOBS
+    idx = blobs.index(cur) if cur in blobs else -1
+    nxt = blobs[(idx + 1) % len(blobs)]
+    return replace(g, fake_payload=nxt, source="mutation", mutation_op="mutate_fake_payload")
+
+
+def mutate_add_host_template(g: Genome) -> Genome:
+    """Только для hostfakesplit -- host= (подмена SNI на фейковых
+    сегментах, отдельный механизм от blob-клонов). Единственное
+    подтверждённое боевое значение -- host=ozon.ru (strategy=27), другие
+    домены не выдумываем."""
+    if g.family != "hostfakesplit":
+        return replace(g, source="mutation", mutation_op="mutate_add_host_template")
+    return replace(g, host_template="ozon.ru", source="mutation", mutation_op="mutate_add_host_template")
+
+
 def _add_fooling(existing: str, addition: str) -> str:
     if not existing:
         return addition
@@ -170,6 +198,8 @@ OPERATORS = {
     "mutate_seqovl": mutate_seqovl,
     "mutate_add_repeats": mutate_add_repeats,
     "mutate_pos_combine": mutate_pos_combine,
+    "mutate_fake_payload": mutate_fake_payload,
+    "mutate_add_host_template": mutate_add_host_template,
 }
 
 # Порядок эскалации со слов автора z2r: TTL не проходит -> autottl -> DPI
@@ -190,12 +220,19 @@ OPERATORS = {
 # mutate_pos_combine -- сразу после mutate_pos/mutate_seqovl, т.к. это тоже
 # уточнение сегментации, но воспроизводит конкретно боевой RKN_TLS
 # strategy=1 паттерн (pos=1,midsld), который одиночные маркеры не покрывают.
+#
+# mutate_fake_payload поставлен рядом с mutate_add_repeats -- дешёвый,
+# не требует смены family, проверяет "легенду" про влияние конкретного
+# blob= на результат (см. живое обсуждение 2026-08-07). mutate_add_host_template
+# -- рядом с остальными hostfakesplit-специфичными операторами, единственное
+# подтверждённое значение (host=ozon.ru), не наугад подобрано.
 ESCALATION_ORDER = [
     "mutate_ttl_fixed",
     "mutate_ttl_autottl",
     "mutate_add_tcp_ts",
     "mutate_add_tcp_md5",
     "mutate_add_repeats",
+    "mutate_fake_payload",
     "mutate_to_multisplit",
     "mutate_add_blob_nodrop",
     "mutate_pos",
@@ -206,6 +243,7 @@ ESCALATION_ORDER = [
     "mutate_to_hostfakesplit",
     "mutate_add_disorder_after",
     "mutate_add_midhost",
+    "mutate_add_host_template",
 ]
 
 
