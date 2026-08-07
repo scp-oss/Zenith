@@ -1,35 +1,35 @@
-"""Тестовый клиент для VOICE_UDP — реальное Discord voice UDP-подключение
-(websocket handshake + IP discovery), не имитация. discord.py использует
-свой event loop, несовместимый с обычным sync-вызовом из main.py, поэтому
-запускается отдельным процессом от имени SANDBOX_USER (см.
-sandbox/voice_probe.py) — так его UDP-трафик попадает в узкое
-iptables-правило песочницы, как и curl у tester.py для TCP-профилей.
+"""Тестовый клиент для VOICE_UDP — вызывает уже работающий и залогиненный
+z2r_test-voice-bot через его локальный HTTP (POST /probe), а не отдельный
+Discord-процесс/токен Zenith'а (см. z2r_test-voice-bot/README.md
+"Интеграция с Zenith"): один бот, один токен, один владелец — по явному
+запросу, вместо двух параллельных сессий на разных токенах.
 
-Метрика — время подключения в мс (как connect_ms у z2r_test-voice-bot),
-не байты: возвращает ту же форму (success, bytes, latency_ms), что
-tester.probe(), с bytes всегда 0 — для единообразия сигнатуры в main.py,
-не потому что байты что-то значат тут.
+Бот сам применяет присланный геном в СВОЕЙ песочнице (той же, что и
+остальные профили Zenith) и тестирует реальным Discord voice
+UDP-подключением (websocket handshake + IP discovery, не имитация) —
+main.py для VOICE_UDP НЕ вызывает sandbox_apply.apply_genome() отдельно,
+это сделал бы двойную (хоть и безвредную) работу.
+
+Метрика — время подключения в мс (как connect_ms у бота), не байты:
+возвращает ту же форму (success, bytes, latency_ms), что tester.probe(),
+с bytes всегда 0 — для единообразия сигнатуры вызова в main.py.
 """
 import json
-import subprocess
+import os
+import urllib.request
 
-import config
-
-VOICE_PROBE_SCRIPT = f"{config.SANDBOX_DIR}/voice_probe.py"
-VENV_PYTHON = f"{config.ZENITH_DIR}/orchestrator/venv/bin/python3"
-TIMEOUT_SECONDS = 40  # держим с запасом сверх ZENITH_VOICE_HOLD_SECONDS+CONNECT_TIMEOUT из voice.env
+PROBE_URL = os.environ.get("ZENITH_PROBE_URL", "http://127.0.0.1:8765/probe")
+TIMEOUT_SECONDS = 40
 
 
-def probe() -> tuple:
+def probe(lua_desync_lines: list) -> tuple:
+    body = json.dumps({"lua_desync_lines": lua_desync_lines}).encode()
+    req = urllib.request.Request(
+        PROBE_URL, data=body, headers={"Content-Type": "application/json"}, method="POST",
+    )
     try:
-        out = subprocess.run(
-            ["sudo", "-u", config.SANDBOX_USER, VENV_PYTHON, VOICE_PROBE_SCRIPT],
-            capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
-        )
-        lines = [l for l in out.stdout.strip().splitlines() if l.strip()]
-        if not lines:
-            return False, 0, 0
-        result = json.loads(lines[-1])
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+            result = json.loads(resp.read().decode())
     except Exception:
         return False, 0, 0
     return bool(result.get("success")), 0, int(result.get("connect_ms", 0))

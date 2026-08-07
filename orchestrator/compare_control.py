@@ -35,17 +35,20 @@ SETTLE_SECONDS = 3
 
 
 def measure(conn, env_id: int, gid: str, filter_lines: list, lua_lines: list, domains: list, trials_per_domain: int, profile: str) -> dict:
-    if not sandbox_apply.apply_raw(filter_lines, lua_lines):
-        print("  не удалось применить в песочнице", file=sys.stderr)
-        return {}
-    time.sleep(SETTLE_SECONDS)
+    if profile != "VOICE_UDP":
+        if not sandbox_apply.apply_raw(filter_lines, lua_lines):
+            print("  не удалось применить в песочнице", file=sys.stderr)
+            return {}
+        time.sleep(SETTLE_SECONDS)
 
     per_domain = {}
     for domain in domains:
         results = []
         for _ in range(trials_per_domain):
             if profile == "VOICE_UDP":
-                success, bytes_, latency_ms = voice_tester.probe()
+                # z2r_test-voice-bot применяет геном в своей песочнице сам
+                # на каждый вызов -- не sandbox_apply.apply_raw() отсюда.
+                success, bytes_, latency_ms = voice_tester.probe(lua_lines)
             else:
                 success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
             reward = scoring.compute_reward(success, latency_ms)

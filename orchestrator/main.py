@@ -105,13 +105,17 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
     if not control:
         print(f"  (нет control-генома для {profile}, проверить не могу)", file=sys.stderr)
         return False
-    if not sandbox_apply.apply_raw(genome_mod.PROFILE_FILTERS[profile], control):
-        print("  не удалось применить control в песочнице", file=sys.stderr)
-        return False
-    time.sleep(BASE_SETTLE_SECONDS)
+
     if profile == "VOICE_UDP":
-        success, bytes_, latency_ms = voice_tester.probe()
+        # z2r_test-voice-bot сам применяет control в своей песочнице
+        # (см. voice_tester.probe), не sandbox_apply -- бот работает от
+        # zenith-sandbox, отдельного пути применения тут не нужно.
+        success, bytes_, latency_ms = voice_tester.probe(control)
     else:
+        if not sandbox_apply.apply_raw(genome_mod.PROFILE_FILTERS[profile], control):
+            print("  не удалось применить control в песочнице", file=sys.stderr)
+            return False
+        time.sleep(BASE_SETTLE_SECONDS)
         success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
     print(f"  control-проверка: {'OK' if success else 'fail'} ({bytes_} bytes)")
 
@@ -154,20 +158,22 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
         gid = db.insert_genome(conn, genome)
         print(f"[{round_no}/{rounds}] {profile} op={op_name or 'seed'} -> {genome.render_args()}")
 
-        try:
-            applied = sandbox_apply.apply_genome(genome)
-        except RuntimeError as e:
-            print(f"  {e}", file=sys.stderr)
-            return 1
-        if not applied:
-            print("  не удалось применить в песочнице (start_sandbox.sh вернул ошибку), пропуск", file=sys.stderr)
-            continue
-
-        time.sleep(settle)
-
         if profile == "VOICE_UDP":
-            success, bytes_, latency_ms = voice_tester.probe()
+            # z2r_test-voice-bot применяет геном в СВОЕЙ песочнице сам
+            # (работает от zenith-sandbox) при получении /probe -- не
+            # sandbox_apply.apply_genome() отсюда, было бы двойной работой.
+            success, bytes_, latency_ms = voice_tester.probe([genome.render_args()])
         else:
+            try:
+                applied = sandbox_apply.apply_genome(genome)
+            except RuntimeError as e:
+                print(f"  {e}", file=sys.stderr)
+                return 1
+            if not applied:
+                print("  не удалось применить в песочнице (start_sandbox.sh вернул ошибку), пропуск", file=sys.stderr)
+                continue
+
+            time.sleep(settle)
             success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
         reward = scoring.compute_reward(success, latency_ms)
 
