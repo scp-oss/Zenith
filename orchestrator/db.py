@@ -65,6 +65,21 @@ def record_experiment(conn, genome_id, environment_id, domain_id, success, bytes
     )
 
 
+def get_genomes_with_scores(conn, profile: str, environment_id: int):
+    """Для genome-level UCB в main.py -- все геномы профиля, которые уже
+    хоть раз пробовались в этом окружении, с накопленной статистикой
+    (не только сиды, но и любые ранее сгенерированные мутанты)."""
+    cur = conn.cursor(dictionary=True)
+    cur.execute(
+        """SELECT g.params_json, g.generation, gs.pulls, gs.total_reward
+           FROM genome_scores gs
+           JOIN genomes g ON g.id = gs.genome_id AND g.profile = %s
+           WHERE gs.environment_id = %s AND gs.pulls > 0""",
+        (profile, environment_id),
+    )
+    return cur.fetchall()
+
+
 def upsert_genome_score(conn, genome_id, environment_id, success: bool, reward: float):
     cur = conn.cursor()
     cur.execute(

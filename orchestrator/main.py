@@ -4,20 +4,20 @@
     python3 main.py --profile YT_TLS --rounds 20
 
 Каждый раунд: если сиды профиля ещё не все опробованы — берёт следующий
-сид, иначе UCB1 выбирает мутационный оператор (см. mutate.py) и мутирует
-случайный сид. Применяет геном через песочницу (sandbox_apply.py),
-тестирует реальным коннектом от юзера песочницы (tester.py), пишет
-результат в БД.
+сид, иначе UCB1 выбирает и мутационный оператор (см. mutate.py), и
+РОДИТЕЛЬСКИЙ геном для мутации — из всех уже опробованных в этом
+окружении, не только сидов, так что удачные находки докручиваются, а не
+теряются на каждом раунде. Применяет геном через песочницу
+(sandbox_apply.py), тестирует реальным коннектом от юзера песочницы
+(tester.py), пишет результат в БД.
 
 Упрощения v1 (см. README/Roadmap Zenith):
-- Мутация всегда берётся от случайного СИДА, не от лучшего найденного
-  генома — полноценный genome-level UCB (не только по операторам) ещё не
-  реализован.
 - crossover() в mutate.py существует, но в цикл ниже пока не подключён.
 - circuit breaker простой (N разных геномов подряд провалились на одном
   домене), без более тонкой статистики.
 """
 import argparse
+import json
 import math
 import random
 import sys
@@ -25,6 +25,7 @@ import time
 
 import controls
 import db
+import genome as genome_mod
 import mutate
 import sandbox_apply
 import scoring
@@ -58,6 +59,24 @@ def pick_operator_ucb(op_stats: dict, total_pulls: int) -> str:
         if score > best_score:
             best_op, best_score = op, score
     return best_op
+
+
+def pick_parent_ucb(rows: list, profile: str):
+    """UCB1 по всем УЖЕ ОПРОБОВАННЫМ геномам профиля (сиды + любые
+    сгенерированные раньше), не только по сидам -- иначе генератор каждый
+    раунд мутирует от случайного сида и никогда не докручивает удачные
+    находки. Живое наблюдение 2026-08-07: паритет с ручными стратегиями на
+    RKN_TLS и DS_TLS, но не превосходство -- подозрение как раз на это."""
+    total_pulls = sum(r["pulls"] for r in rows) or 1
+    best_row, best_score = None, -1.0
+    for row in rows:
+        pulls = row["pulls"] or 1
+        mean = row["total_reward"] / pulls
+        bonus = math.sqrt(2 * math.log(max(total_pulls, 1)) / pulls)
+        score = mean + bonus
+        if score > best_score:
+            best_row, best_score = row, score
+    return genome_mod.from_params(profile, json.loads(best_row["params_json"]), best_row["generation"])
 
 
 def check_ban_suspected(conn, domain_id) -> bool:
@@ -113,9 +132,11 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
             op_name = None
         else:
             op_stats = db.get_operator_stats(conn, env_id, FILTER_TYPE)
-            total_pulls = sum(s["pulls"] for s in op_stats.values()) or 1
-            parent = random.choice(seed_pool)
-            op_name = pick_operator_ucb(op_stats, total_pulls)
+            total_op_pulls = sum(s["pulls"] for s in op_stats.values()) or 1
+            op_name = pick_operator_ucb(op_stats, total_op_pulls)
+
+            parent_rows = db.get_genomes_with_scores(conn, profile, env_id)
+            parent = pick_parent_ucb(parent_rows, profile) if parent_rows else random.choice(seed_pool)
             genome = mutate.apply_operator(parent, op_name)
 
         gid = db.insert_genome(conn, genome)

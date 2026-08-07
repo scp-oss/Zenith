@@ -30,6 +30,14 @@ def render_ttl(ttl_mode: Optional[str]) -> Optional[str]:
     return None
 
 
+def from_params(profile: str, params: dict, generation: int = 0) -> "Genome":
+    """Восстанавливает Genome из genomes.params_json -- ключи там 1:1
+    совпадают с полями Genome (см. params_json()). Нужен для genome-level
+    UCB в main.py: мутировать не только от сидов, но и от лучших УЖЕ
+    НАЙДЕННЫХ геномов, которые в памяти не живут между раундами."""
+    return Genome(profile=profile, generation=generation, **params)
+
+
 @dataclass
 class Genome:
     profile: str
