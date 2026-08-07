@@ -66,9 +66,13 @@ CREATE TABLE domain_pool (
 -- (rank_strategies.sh) для соответствующих профилей, не новые. GV_TLS
 -- сюда не входит — её тестовый URL резолвится динамически через yt-dlp
 -- (get_gv_test_url), а не фиксированный домен.
+-- rutor.info для RKN_TLS подтверждён живьём в /opt/zapret2/extra_strats/
+-- TCP_RKN_list.txt (тот же хостлист, что реально маршрутизирует rutracker.org
+-- через профиль 3 — см. README) — не наугад добавлен.
 INSERT INTO domain_pool (host, path, profile_hint) VALUES
     ('www.youtube.com', '/', 'YT_TLS'),
     ('meduza.io', '/', 'RKN_TLS'),
+    ('rutor.info', '/', 'RKN_TLS'),
     ('discord.com', '/', 'DS_TLS');
 
 -- Каждый прогон генома против домена/окружения — сырая история для скоринга.

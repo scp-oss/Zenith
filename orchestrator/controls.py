@@ -22,6 +22,14 @@ CONTROLS = {
         "--lua-desync=multisplit:blob=fake_default_tls:tcp_ts=-1000:pos=2:nodrop",
         "--lua-desync=fakeddisorder:pos=midsld:tcp_ts=-1000",
     ],
+    # RKN_TLS: боевая strategy=1 (см. /opt/zapret2/config), 2026-08-07.
+    # pos=1,midsld -- список из ДВУХ маркеров, наша модель Genome такое
+    # пока не генерирует (см. mutate.py TODO), но control -- сырые строки,
+    # ему это ограничение не мешает.
+    "RKN_TLS": [
+        "--lua-desync=fake:blob=fake_default_tls:tcp_ts=-1000:repeats=2",
+        "--lua-desync=multisplit:pos=1,midsld",
+    ],
 }
 
 
