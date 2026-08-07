@@ -10,7 +10,11 @@ import copy
 from dataclasses import replace
 from genome import Genome
 
-POS_MARKERS = ("1", "2", "sld", "midsld")
+# Полный набор маркеров позиции из манула zapret2 (числовые + логические
+# для tls_client_hello/http_req), не только 4 исходных. sniext+1/sniext+4
+# добавлены не наугад -- это подтверждённые боевые значения из реального
+# конфига (strategy=4/6 z2r), которые мы раньше вообще не генерировали.
+POS_MARKERS = ("1", "2", "sld", "endsld", "midsld", "host", "endhost", "sniext+1", "sniext+4", "extlen")
 
 
 def mutate_ttl_fixed(g: Genome) -> Genome:
