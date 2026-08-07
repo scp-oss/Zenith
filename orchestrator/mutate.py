@@ -64,6 +64,38 @@ def mutate_to_fakeddisorder(g: Genome) -> Genome:
     )
 
 
+def mutate_to_hostfakesplit(g: Genome) -> Genome:
+    """hostfakesplit требует фулинга на фейковых частях, иначе сервер их
+    примет -- tcp_ack=-66000:tcp_ts_up это самая частая связка в реальном
+    боевом конфиге (strategy=11/12/15/133/137 и т.д.), не наугад
+    подобрано. pos тут не используется как cut-маркер multisplit'а,
+    render_args() в genome.py сам рендерит его как midhost=."""
+    fooling = _add_fooling(g.fooling, "tcp_ack=-66000")
+    fooling = _add_fooling(fooling, "tcp_ts_up")
+    return replace(
+        g, family="hostfakesplit", pos=None, seqovl=None, nodrop=False,
+        fake_payload=None, fooling=fooling,
+        source="mutation", mutation_op="mutate_to_hostfakesplit",
+    )
+
+
+def mutate_add_disorder_after(g: Genome) -> Genome:
+    """Только для hostfakesplit -- реальная связка disorder_after
+    (strategy=14/15/134/136/166), без явного значения маркера (боевой
+    конфиг тоже так делает -- голый флаг)."""
+    if g.family != "hostfakesplit":
+        return replace(g, source="mutation", mutation_op="mutate_add_disorder_after")
+    return replace(g, disorder_after=True, source="mutation", mutation_op="mutate_add_disorder_after")
+
+
+def mutate_add_midhost(g: Genome) -> Genome:
+    """Только для hostfakesplit -- задать midhost (реальный пример:
+    strategy=138, midhost=midsld)."""
+    if g.family != "hostfakesplit":
+        return replace(g, source="mutation", mutation_op="mutate_add_midhost")
+    return replace(g, pos="midsld", source="mutation", mutation_op="mutate_add_midhost")
+
+
 def mutate_add_blob_nodrop(g: Genome) -> Genome:
     """Только для multisplit/multidisorder -- подмена пейлоада на фейковый
     blob + nodrop, тот же паттерн, что боевая strategy=5
@@ -106,6 +138,9 @@ OPERATORS = {
     "mutate_to_multidisorder": mutate_to_multidisorder,
     "mutate_to_fakeddisorder": mutate_to_fakeddisorder,
     "mutate_add_blob_nodrop": mutate_add_blob_nodrop,
+    "mutate_to_hostfakesplit": mutate_to_hostfakesplit,
+    "mutate_add_disorder_after": mutate_add_disorder_after,
+    "mutate_add_midhost": mutate_add_midhost,
     "mutate_pos": mutate_pos,
     "mutate_seqovl": mutate_seqovl,
 }
@@ -119,6 +154,9 @@ OPERATORS = {
 # добавлены после живой проверки 2026-08-06 -- боевая strategy=5
 # (multisplit+blob+nodrop, затем fakeddisorder) сработала там, где 4
 # более простых сгенерированных генома подряд провалились.
+# mutate_to_hostfakesplit идёт ближе к концу цепочки -- это самая
+# продвинутая техника разреза (замешивание фейков прямо в имя хоста),
+# логично пробовать после более простых сегментаций, а не раньше них.
 ESCALATION_ORDER = [
     "mutate_ttl_fixed",
     "mutate_ttl_autottl",
@@ -130,6 +168,9 @@ ESCALATION_ORDER = [
     "mutate_seqovl",
     "mutate_to_multidisorder",
     "mutate_to_fakeddisorder",
+    "mutate_to_hostfakesplit",
+    "mutate_add_disorder_after",
+    "mutate_add_midhost",
 ]
 
 

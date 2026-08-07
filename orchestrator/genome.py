@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
-FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder")
+FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder", "hostfakesplit")
 
 # Same filter target for every profile right now (all current seed
 # domains are TLS/443) -- becomes per-profile if a UDP/HTTP profile joins.
@@ -37,9 +37,11 @@ class Genome:
     fooling: Optional[str] = None        # 'tcp_md5' | 'tcp_ts=-1' | combo joined by ':' | None
     ttl_mode: Optional[str] = None        # 'fixed:6' | 'autottl:1,3-64' | None
     fake_payload: Optional[str] = None    # blob name -- for family=fake, or optional blob= on multisplit/multidisorder
-    pos: Optional[str] = None             # split marker -- multisplit/multidisorder/fakeddisorder
+    pos: Optional[str] = None             # split marker -- multisplit/multidisorder/fakeddisorder; reused as midhost= for hostfakesplit
     seqovl: Optional[str] = None          # only for multisplit/multidisorder
     nodrop: bool = False                  # only for multisplit/multidisorder -- confirmed real usage: strategy=5 combines this with blob=
+    host_template: Optional[str] = None   # hostfakesplit's host= (genhost template, e.g. 'ozon.ru') -- optional, real config mostly omits it
+    disorder_after: bool = False          # hostfakesplit only -- confirmed real usage (strategy=14/15), used as a bare flag
     source: str = "seed"                  # seed | mutation | crossover
     parent1_id: Optional[str] = None
     parent2_id: Optional[str] = None
@@ -70,6 +72,14 @@ class Genome:
                 head += ":nodrop"
         elif self.family == "fakeddisorder":
             head = f"fakeddisorder:pos={self.pos or 'midsld'}"
+        elif self.family == "hostfakesplit":
+            head = "hostfakesplit"
+            if self.pos:
+                head += f":midhost={self.pos}"
+            if self.disorder_after:
+                head += ":disorder_after"
+            if self.host_template:
+                head += f":host={self.host_template}"
         else:
             raise ValueError(f"unknown family: {self.family}")
 
@@ -95,6 +105,8 @@ class Genome:
                 "pos": self.pos,
                 "seqovl": self.seqovl,
                 "nodrop": self.nodrop,
+                "host_template": self.host_template,
+                "disorder_after": self.disorder_after,
             },
             ensure_ascii=False,
         )

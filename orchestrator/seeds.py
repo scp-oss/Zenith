@@ -14,4 +14,9 @@ def get_seeds(profile: str) -> list:
         Genome(profile=profile, family="multisplit", pos="1", seqovl="1"),
         Genome(profile=profile, family="multidisorder", pos="midsld"),
         Genome(profile=profile, family="multidisorder", pos="2", seqovl="midsld-1"),
+        # hostfakesplit: связка tcp_ack=-66000:tcp_ts_up -- самая частая в
+        # реальном боевом конфиге (strategy=11 и десятки похожих).
+        Genome(profile=profile, family="hostfakesplit", fooling="tcp_ack=-66000:tcp_ts_up"),
+        Genome(profile=profile, family="hostfakesplit", fooling="tcp_ack=-66000:tcp_ts_up", disorder_after=True),
+        Genome(profile=profile, family="hostfakesplit", pos="midsld", fooling="tcp_ack=-66000:tcp_ts_up"),
     ]
