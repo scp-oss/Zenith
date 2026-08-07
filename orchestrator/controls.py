@@ -44,6 +44,13 @@ CONTROLS = {
     "DS_TLS": [
         "--lua-desync=multidisorder:pos=1,host+2,sld+2,sld+5,sniext+1,sniext+2,endhost-2:seqovl=1",
     ],
+    # VOICE_UDP: залоченная сейчас -- strategy=30 (`set_strategy_cli.sh
+    # get 6 udp` -> "30"), 2026-08-07. out_range=-d3 -- необъяснённый
+    # (не в манулe) аргумент, но control -- сырая строка, не мутируем
+    # его, просто воспроизводим как есть.
+    "VOICE_UDP": [
+        "--lua-desync=fake:blob=0x00:repeats=10:out_range=-d3",
+    ],
 }
 
 
