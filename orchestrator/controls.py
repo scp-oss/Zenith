@@ -34,6 +34,15 @@ CONTROLS = {
         "--lua-desync=multisplit:blob=fake_default_tls:tcp_ts=-500:pos=2:nodrop",
         "--lua-desync=fakeddisorder:pos=midsld:tcp_ts=-500",
     ],
+    # DS_TLS: свой отдельный инлайн-блок в конфиге (circular_locked:key=4,
+    # НЕ через --import=z2r_tcp_tls_common, в отличие от YT/GV/RKN) --
+    # значит номер strategy тут не пересекается по смыслу с остальными
+    # профилями. Залоченная сейчас -- strategy=28 (`set_strategy_cli.sh
+    # get 4 tls` -> "28"), 2026-08-07. pos= с 7 маркерами через запятую --
+    # наша модель пока генерирует максимум 2 (mutate_pos_combine).
+    "DS_TLS": [
+        "--lua-desync=multidisorder:pos=1,host+2,sld+2,sld+5,sniext+1,sniext+2,endhost-2:seqovl=1",
+    ],
 }
 
 
