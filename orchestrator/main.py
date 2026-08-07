@@ -27,6 +27,7 @@ import controls
 import db
 import mutate
 import sandbox_apply
+import scoring
 import seeds
 import tester
 
@@ -130,7 +131,7 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
         time.sleep(settle)
 
         success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
-        reward = 1.0 if success else 0.0
+        reward = scoring.compute_reward(success, latency_ms)
 
         db.record_experiment(conn, gid, env_id, domain["id"], success, bytes_, latency_ms)
         db.upsert_genome_score(conn, gid, env_id, success, reward)
