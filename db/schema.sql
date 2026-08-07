@@ -69,11 +69,17 @@ CREATE TABLE domain_pool (
 -- rutor.info для RKN_TLS подтверждён живьём в /opt/zapret2/extra_strats/
 -- TCP_RKN_list.txt (тот же хостлист, что реально маршрутизирует rutracker.org
 -- через профиль 3 — см. README) — не наугад добавлен.
-INSERT INTO domain_pool (host, path, profile_hint) VALUES
-    ('www.youtube.com', '/', 'YT_TLS'),
-    ('meduza.io', '/', 'RKN_TLS'),
-    ('rutor.info', '/', 'RKN_TLS'),
-    ('discord.com', '/', 'DS_TLS');
+-- VOICE_UDP -- placeholder-запись, не настоящий домен: тест этого
+-- профиля -- реальное Discord voice UDP-подключение к фиксированному
+-- каналу (см. orchestrator/voice_tester.py), не HTTP-запрос к хосту.
+-- host/path/min_bytes тут не используются voice_tester'ом, нужна только
+-- сама строка ради domain_id (experiments.domain_id NOT NULL).
+INSERT INTO domain_pool (host, path, profile_hint, min_bytes) VALUES
+    ('www.youtube.com', '/', 'YT_TLS', 65536),
+    ('meduza.io', '/', 'RKN_TLS', 65536),
+    ('rutor.info', '/', 'RKN_TLS', 65536),
+    ('discord.com', '/', 'DS_TLS', 65536),
+    ('discord-voice-test', '/', 'VOICE_UDP', 0);
 
 -- Каждый прогон генома против домена/окружения — сырая история для скоринга.
 CREATE TABLE experiments (

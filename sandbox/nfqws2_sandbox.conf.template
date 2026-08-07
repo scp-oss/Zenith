@@ -10,5 +10,9 @@
 --blob=tls4:@/opt/zapret2/files/fake/tls_clienthello_4.bin
 --blob=custom:@/opt/zapret2/files/fake/custom_tls.bin
 --blob=tls5:@/opt/zapret2/files/fake/tls_clienthello_5.bin
+--blob=stun_fake:@/opt/zapret2/files/fake/stun.bin
+--blob=discord_fake:@/opt/zapret2/files/fake/quic_initial_dbankcloud_ru.bin
+--blob=discord_udp_1:@/opt/zapret2/files/fake/discord_udp_1.bin
+--blob=discord_udp_2:@/opt/zapret2/files/fake/discord_udp_2.bin
 --filter-tcp=443 --filter-l7=tls
 --lua-desync=fake:blob=fake_default_tls:ip_ttl=6

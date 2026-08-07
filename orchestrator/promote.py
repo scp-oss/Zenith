@@ -27,8 +27,10 @@ import db
 # Совпадает и с rank_strategies.sh (case TITLE=...), и с
 # circular_locked:key=N в самом /opt/zapret2/config -- сверено вживую
 # 2026-08-07 (RKN_TLS=3 через set_strategy_cli.sh get 3 tls, DS_TLS=4
-# через get 4 tls).
-PROFILE_NUMBERS = {"YT_TLS": 1, "GV_TLS": 2, "RKN_TLS": 3, "DS_TLS": 4}
+# через get 4 tls). VOICE_UDP=6 -- подтверждено VOICE_PROFILE в
+# z2r_test-voice-bot/bot.py и circular_locked:key=6:proto=udp в конфиге.
+PROFILE_NUMBERS = {"YT_TLS": 1, "GV_TLS": 2, "RKN_TLS": 3, "DS_TLS": 4, "VOICE_UDP": 6}
+PROFILE_PROTO = {"VOICE_UDP": "udp"}  # всё остальное -- tls (значение по умолчанию)
 
 
 def pick_best(conn, profile: str, environment_id: int, min_pulls: int):
@@ -88,6 +90,7 @@ def run(profile: str, genome_id: str, after_strategy: int, environment_name: str
     strategy_n = after_strategy + 1
     lines = row["rendered_args"].split("\n")
     profile_num = PROFILE_NUMBERS[profile]
+    proto = PROFILE_PROTO.get(profile, "tls")
 
     print(f"# Zenith-generated, genome_id={row['id'][:12]}, source={row['source']}, generation={row['generation']}")
     print(f"# pulls={row.get('pulls', '?')} successes={row.get('successes', '?')} avg_score={row.get('avg_score', '?')}")
@@ -114,8 +117,8 @@ def run(profile: str, genome_id: str, after_strategy: int, environment_name: str
     print("sudo systemctl restart zapret2")
     print("systemctl status zapret2 | grep -i since   # since должен быть ТОЛЬКО ЧТО")
     print()
-    print(f"bash /opt/z2r_autobench/set_strategy_cli.sh set {profile_num} tls {strategy_n}")
-    print(f"bash /opt/z2r_autobench/set_strategy_cli.sh get {profile_num} tls   # должен вернуть {strategy_n}")
+    print(f"bash /opt/z2r_autobench/set_strategy_cli.sh set {profile_num} {proto} {strategy_n}")
+    print(f"bash /opt/z2r_autobench/set_strategy_cli.sh get {profile_num} {proto}   # должен вернуть {strategy_n}")
     print()
     print("# После переключения — проверить живым трафиком (не через sandbox) на")
     print("# КАЖДОМ домене профиля несколько раз ПЕРЕД тем, как считать промоушен")
@@ -126,7 +129,7 @@ def run(profile: str, genome_id: str, after_strategy: int, environment_name: str
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS"])
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--genome-id", help="id (или префикс) конкретного генома; иначе автовыбор лучшего")
     ap.add_argument("--after-strategy", type=int, required=True, help="текущий max strategy= для профиля")
     ap.add_argument("--environment", default="prod-domru")

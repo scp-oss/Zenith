@@ -35,11 +35,18 @@ def mutate_ttl_autottl(g: Genome) -> Genome:
 
 
 def mutate_add_tcp_ts(g: Genome) -> Genome:
+    """tcp_ts -- TCP-only (standard fooling), бессмысленно/невалидно на
+    UDP-геноме (VOICE_UDP), no-op в этом случае."""
+    if g.filter_type == "udp/443":
+        return replace(g, source="mutation", mutation_op="mutate_add_tcp_ts")
     fooling = _add_fooling(g.fooling, "tcp_ts=-1")
     return replace(g, fooling=fooling, source="mutation", mutation_op="mutate_add_tcp_ts")
 
 
 def mutate_add_tcp_md5(g: Genome) -> Genome:
+    """tcp_md5 -- TCP-only, no-op на UDP-геноме."""
+    if g.filter_type == "udp/443":
+        return replace(g, source="mutation", mutation_op="mutate_add_tcp_md5")
     fooling = _add_fooling(g.fooling, "tcp_md5")
     return replace(g, fooling=fooling, source="mutation", mutation_op="mutate_add_tcp_md5")
 
@@ -152,15 +159,54 @@ def mutate_fake_payload(g: Genome) -> Genome:
     (DPI мог обучиться сигнатуре распространённого блоба), звучит
     правдоподобно, но непроверена -- этот оператор даёт генератору шанс
     подтвердить/опровергнуть её эмпирически вместо гадания. Список --
-    genome.TLS_FAKE_BLOBS, реально объявленные в боевом конфиге блобы, не
-    выдуманные имена."""
+    genome.TLS_FAKE_BLOBS/UDP_FAKE_BLOBS, реально объявленные в боевом
+    конфиге блобы (по протоколу профиля), не выдуманные имена."""
     if g.family not in ("fake", "multisplit", "multidisorder"):
         return replace(g, source="mutation", mutation_op="mutate_fake_payload")
-    cur = g.fake_payload or "fake_default_tls"
-    blobs = genome.TLS_FAKE_BLOBS
+    is_udp = g.filter_type == "udp/443"
+    blobs = genome.UDP_FAKE_BLOBS if is_udp else genome.TLS_FAKE_BLOBS
+    default_blob = "fake_default_udp" if is_udp else "fake_default_tls"
+    cur = g.fake_payload or default_blob
     idx = blobs.index(cur) if cur in blobs else -1
     nxt = blobs[(idx + 1) % len(blobs)]
     return replace(g, fake_payload=nxt, source="mutation", mutation_op="mutate_fake_payload")
+
+
+def mutate_to_udplen(g: Genome) -> Genome:
+    """Только для VOICE_UDP -- переключает на udplen (изменение длины L4
+    пейлоада), реальные боевые значения increment=8/pattern=... (strategy=11)
+    как отправная точка."""
+    if g.filter_type != "udp/443":
+        return replace(g, source="mutation", mutation_op="mutate_to_udplen")
+    return replace(
+        g, family="udplen", udplen_increment=8, udplen_pattern="0xC3000001",
+        udplen_min=None, fake_payload=None, fooling=None, repeats=None,
+        source="mutation", mutation_op="mutate_to_udplen",
+    )
+
+
+def mutate_to_send(g: Genome) -> Genome:
+    """Только для VOICE_UDP -- переключает на send (переотправка оригинала
+    с fooling, обычно ip_autottl -- реальная боевая strategy=20/21)."""
+    if g.filter_type != "udp/443":
+        return replace(g, source="mutation", mutation_op="mutate_to_send")
+    return replace(
+        g, family="send", ttl_mode="autottl:0,3-200", repeats=2,
+        fake_payload=None, fooling=None,
+        source="mutation", mutation_op="mutate_to_send",
+    )
+
+
+def mutate_add_ipfrag(g: Genome) -> Genome:
+    """Только для VOICE_UDP family=fake -- ipfrag_pos_udp/ipfrag_disorder
+    (standard ipfrag), реальное боевое значение pos=8 (кратно 8, как того
+    требует манул), disorder -- отдельный подключаемый флаг (strategy=24/32
+    комбинируют оба, strategy=4/27/28 -- только pos)."""
+    if g.filter_type != "udp/443" or g.family != "fake":
+        return replace(g, source="mutation", mutation_op="mutate_add_ipfrag")
+    if g.ipfrag_pos_udp is None:
+        return replace(g, ipfrag_pos_udp=8, source="mutation", mutation_op="mutate_add_ipfrag")
+    return replace(g, ipfrag_disorder=not g.ipfrag_disorder, source="mutation", mutation_op="mutate_add_ipfrag")
 
 
 def mutate_add_host_template(g: Genome) -> Genome:
@@ -200,6 +246,9 @@ OPERATORS = {
     "mutate_pos_combine": mutate_pos_combine,
     "mutate_fake_payload": mutate_fake_payload,
     "mutate_add_host_template": mutate_add_host_template,
+    "mutate_to_udplen": mutate_to_udplen,
+    "mutate_to_send": mutate_to_send,
+    "mutate_add_ipfrag": mutate_add_ipfrag,
 }
 
 # Порядок эскалации со слов автора z2r: TTL не проходит -> autottl -> DPI
@@ -226,6 +275,12 @@ OPERATORS = {
 # blob= на результат (см. живое обсуждение 2026-08-07). mutate_add_host_template
 # -- рядом с остальными hostfakesplit-специфичными операторами, единственное
 # подтверждённое значение (host=ozon.ru), не наугад подобрано.
+#
+# mutate_to_udplen/mutate_to_send/mutate_add_ipfrag -- только для VOICE_UDP
+# (no-op на TCP-геномах, см. их guard'ы), поставлены в конце цепочки как
+# "смена семейства", той же логикой, что mutate_to_multidisorder/
+# mutate_to_hostfakesplit для TCP -- сначала пробуем варианты внутри
+# текущего family, потом уже меняем family целиком.
 ESCALATION_ORDER = [
     "mutate_ttl_fixed",
     "mutate_ttl_autottl",
@@ -244,6 +299,9 @@ ESCALATION_ORDER = [
     "mutate_add_disorder_after",
     "mutate_add_midhost",
     "mutate_add_host_template",
+    "mutate_add_ipfrag",
+    "mutate_to_udplen",
+    "mutate_to_send",
 ]
 
 

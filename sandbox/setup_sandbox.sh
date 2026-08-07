@@ -12,9 +12,13 @@
 #   2. Свободный номер NFQUEUE — сканирует уже занятые в
 #      `iptables -t mangle -S` и берёт первый свободный от
 #      $SANDBOX_QUEUE_START, а не угадывает вслепую.
-#   3. ОДНО правило: -m owner --uid-owner $SANDBOX_USER -j NFQUEUE
-#      --queue-num <N> --queue-bypass. Никакие существующие правила не
-#      трогает и не удаляет. --queue-bypass — как и в боевом zapret2: если
+#   3. ДВА правила, TCP и UDP (для VOICE_UDP/YT_QUIC_UDP-профилей), на ОДИН
+#      и тот же номер очереди -- один nfqws2 обрабатывает оба протокола
+#      сразу, различая их через --filter-tcp=/--filter-udp= в самом
+#      конфиге, отдельная очередь не нужна.
+#      -m owner --uid-owner $SANDBOX_USER -j NFQUEUE --queue-num <N>
+#      --queue-bypass. Никакие существующие правила не трогает и не
+#      удаляет. --queue-bypass — как и в боевом zapret2: если
 #      nfqws2-песочница не запущена/упала, трафик просто идёт как есть.
 #
 # После выполнения ОБЯЗАТЕЛЬНО сверить глазами:
@@ -51,13 +55,15 @@ while echo "$used_queues" | grep -qx "$qnum"; do
 done
 echo "Свободный номер очереди: $qnum"
 
-# --- 3. правило ---
-if iptables -t mangle -C OUTPUT -m owner --uid-owner "$SANDBOX_USER" -p tcp -j NFQUEUE --queue-num "$qnum" --queue-bypass 2>/dev/null; then
-  echo "Правило уже стоит (и уже с этим номером очереди), пропускаю добавление."
-else
-  iptables -t mangle -A OUTPUT -m owner --uid-owner "$SANDBOX_USER" -p tcp -j NFQUEUE --queue-num "$qnum" --queue-bypass
-  echo "Добавлено правило: TCP-трафик от $SANDBOX_USER -> NFQUEUE $qnum (queue-bypass)."
-fi
+# --- 3. правила (TCP + UDP, один и тот же номер очереди) ---
+for proto in tcp udp; do
+  if iptables -t mangle -C OUTPUT -m owner --uid-owner "$SANDBOX_USER" -p "$proto" -j NFQUEUE --queue-num "$qnum" --queue-bypass 2>/dev/null; then
+    echo "Правило для $proto уже стоит (и уже с этим номером очереди), пропускаю добавление."
+  else
+    iptables -t mangle -A OUTPUT -m owner --uid-owner "$SANDBOX_USER" -p "$proto" -j NFQUEUE --queue-num "$qnum" --queue-bypass
+    echo "Добавлено правило: $proto-трафик от $SANDBOX_USER -> NFQUEUE $qnum (queue-bypass)."
+  fi
+done
 
 echo "$qnum" > "$QUEUE_FILE"
 

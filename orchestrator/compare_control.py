@@ -28,12 +28,13 @@ import genome as genome_mod
 import sandbox_apply
 import scoring
 import tester
+import voice_tester
 
 TOP_N = 3
 SETTLE_SECONDS = 3
 
 
-def measure(conn, env_id: int, gid: str, filter_lines: list, lua_lines: list, domains: list, trials_per_domain: int) -> dict:
+def measure(conn, env_id: int, gid: str, filter_lines: list, lua_lines: list, domains: list, trials_per_domain: int, profile: str) -> dict:
     if not sandbox_apply.apply_raw(filter_lines, lua_lines):
         print("  не удалось применить в песочнице", file=sys.stderr)
         return {}
@@ -43,7 +44,10 @@ def measure(conn, env_id: int, gid: str, filter_lines: list, lua_lines: list, do
     for domain in domains:
         results = []
         for _ in range(trials_per_domain):
-            success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+            if profile == "VOICE_UDP":
+                success, bytes_, latency_ms = voice_tester.probe()
+            else:
+                success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
             reward = scoring.compute_reward(success, latency_ms)
             db.record_experiment(conn, gid, env_id, domain["id"], success, bytes_, latency_ms)
             db.upsert_genome_score(conn, gid, env_id, success, reward)
@@ -92,7 +96,7 @@ def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
         for line in control:
             print(f"  {line}")
         control_gid = db.insert_control_genome(conn, profile, control)
-        summarize("control", measure(conn, env_id, control_gid, filter_lines, control, domains, trials))
+        summarize("control", measure(conn, env_id, control_gid, filter_lines, control, domains, trials, profile))
     else:
         print(f"  нет control-генома для {profile}, сравнивать не с чем", file=sys.stderr)
 
@@ -120,7 +124,7 @@ def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
     print(f"\n=== топ-{len(top)} сгенерированных Zenith (по накопленному avg_score) ===")
     for row in top:
         print(f"\n  {row['rendered_args']}  (было пулов={row['pulls']}, успехов={row['successes']}, avg_score={row['avg_score']})")
-        summarize("generated", measure(conn, env_id, row["id"], filter_lines, [row["rendered_args"]], domains, trials))
+        summarize("generated", measure(conn, env_id, row["id"], filter_lines, [row["rendered_args"]], domains, trials, profile))
 
     conn.close()
     return 0
@@ -128,8 +132,8 @@ def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS"])
-    ap.add_argument("--trials", type=int, default=5, help="попыток НА КАЖДЫЙ домен профиля")
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
+    ap.add_argument("--trials", type=int, default=5, help="попыток НА КАЖДЫЙ домен профиля (для VOICE_UDP -- попыток подключения)")
     ap.add_argument("--environment", default="prod-domru")
     ap.add_argument("--provider", default="domru")
     args = ap.parse_args()

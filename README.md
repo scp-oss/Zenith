@@ -131,6 +131,53 @@ per-host-кэша) — поэтому **любой промоушен всё р�
 проверять живым трафиком на ВСЕХ доменах профиля, ПОСЛЕ подтверждённого
 рестарта**.
 
+## VOICE_UDP — замена ручного Discord-бота
+
+До этого VOICE_UDP (профиль 6) ранжировался вручную через
+`z2r_test-voice-bot` (`/voice_rank`) — тот же по духу инструмент, что
+`rank_strategies.sh` для TCP-профилей до Zenith: перебирает уже готовые
+стратегии, ничего не генерирует. Теперь Zenith генерирует и тестирует
+VOICE_UDP-геномы сам, тем же циклом, что и TCP-профили:
+
+- Геном-модель: `fake`/`udplen`/`send` + `ipfrag_pos_udp`/`ipfrag_disorder`
+  (`genome.py`), блобы -- `genome.UDP_FAKE_BLOBS`, все семейства и блобы
+  сверены построчно с реальным профилем 6 в `/opt/zapret2/config`
+  (`--filter-udp=443,...,50000-50099,...` + `circular_locked:key=6:
+  proto=udp:allow_nohost=1` -- нет SNI у STUN/discord_ip_discovery,
+  профиль матчится по `key`, не по хосту). Осознанно НЕ включает
+  `out_range=` -- встречается в реальном конфиге, но такого
+  per-instance аргумента нет в манулe zapret2 (только CLI-уровневый
+  `--out-range=`), не мутируем то, что не можем объяснить документацией.
+- Тестовый клиент (`orchestrator/voice_tester.py` + `sandbox/voice_probe.py`)
+  -- НЕ имитация: то же самое реальное Discord voice UDP-подключение
+  (gateway handshake + IP discovery), что делает `channel.connect()` в
+  `z2r_test-voice-bot/bot.py` -- используется тот же `discord.py`, просто
+  как отдельный процесс от имени `zenith-sandbox` (чтобы попасть в узкое
+  iptables-правило песочницы), не полноценный бот со slash-командами.
+  Метрика -- время подключения в мс, как `connect_ms` у бота (не байты,
+  байтов тут нет).
+- Свой Discord-бот/токен, ОТДЕЛЬНЫЙ от `z2r_test-voice-bot` -- два
+  процесса с одним токеном одновременно на gateway рвут сессию друг
+  другу. Тот же тестовый голосовой канал (`GUILD_ID`/
+  `TEST_VOICE_CHANNEL_ID` из `.env` бота), пересоздавать не нужно.
+  Настройка -- `sandbox/voice.env.example` → `sandbox/voice.env`,
+  права `640 root:zenith-sandbox` (отдельно от `.env` -- там
+  `MYSQL_PASSWORD`, sandbox-юзеру видеть его незачем).
+- `setup_sandbox.sh` теперь ставит iptables-правило и для UDP тоже (была
+  только TCP), на тот же номер очереди -- один nfqws2 обрабатывает оба
+  протокола сразу.
+
+```bash
+cp sandbox/voice.env.example sandbox/voice.env
+# заполнить ZENITH_DISCORD_TOKEN/ZENITH_GUILD_ID/ZENITH_VOICE_CHANNEL_ID
+sudo chown root:zenith-sandbox sandbox/voice.env && sudo chmod 640 sandbox/voice.env
+
+sudo ./sandbox/setup_sandbox.sh   # повторно, подхватит UDP-правило если юзер/очередь уже есть
+cd orchestrator
+venv/bin/pip install -r requirements.txt   # добавился discord.py[voice]
+sudo venv/bin/python3 main.py --profile VOICE_UDP --rounds 20
+```
+
 ## Статус: работает v1, с упрощениями
 
 - `db/schema.sql` — схема MySQL, теперь с `genomes.profile` (отдельный
@@ -198,6 +245,8 @@ sudo venv/bin/python3 promote.py --profile YT_TLS --after-strategy 42
    (нет exec-доступа к боевому серверу).
 6. Когда появятся ВМ ростелеком/МТС — вынести MySQL за localhost, общая БД
    на несколько площадок разом.
+7. ~~VOICE_UDP через Zenith вместо ручного `z2r_test-voice-bot`~~ — готово
+   (см. раздел выше). GAMES_UDP/FB_TLS/FB_HTTP всё ещё не начаты.
 
 ## Требования
 
@@ -207,3 +256,5 @@ sudo venv/bin/python3 promote.py --profile YT_TLS --after-strategy 42
   (`z2r_autobench`/`locked.tsv`) — Zenith только предлагает и тестирует
   новых кандидатов, финальное применение — через уже существующий
   безопасный путь (`set_strategy_cli.sh`).
+- Для VOICE_UDP — отдельный Discord-бот/токен (см. раздел выше), не тот
+  же, что у `z2r_test-voice-bot`.

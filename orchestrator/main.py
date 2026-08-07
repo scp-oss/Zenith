@@ -31,13 +31,13 @@ import sandbox_apply
 import scoring
 import seeds
 import tester
+import voice_tester
 
 CONSECUTIVE_FAIL_BAN_THRESHOLD = 8
 CHECK_COOLDOWN_ROUNDS = 8  # не дёргать control чаще раза в столько раундов
 BAN_COOLDOWN_SECONDS = 1800
 BASE_SETTLE_SECONDS = 3
 MAX_SETTLE_SECONDS = 60
-FILTER_TYPE = "tcp/443"
 
 
 def pick_operator_ucb(op_stats: dict, total_pulls: int) -> str:
@@ -109,7 +109,10 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
         print("  не удалось применить control в песочнице", file=sys.stderr)
         return False
     time.sleep(BASE_SETTLE_SECONDS)
-    success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+    if profile == "VOICE_UDP":
+        success, bytes_, latency_ms = voice_tester.probe()
+    else:
+        success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
     print(f"  control-проверка: {'OK' if success else 'fail'} ({bytes_} bytes)")
 
     control_gid = db.insert_control_genome(conn, profile, control)
@@ -122,6 +125,7 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
 def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
     conn = db.connect()
     env_id = db.get_or_create_environment(conn, environment_name, provider)
+    filter_type = genome_mod.PROFILE_FILTER_TYPE.get(profile, "tcp/443")
 
     domains = db.get_domains_for_profile(conn, profile)
     if not domains:
@@ -139,7 +143,7 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
             genome = seed_pool[round_no - 1]
             op_name = None
         else:
-            op_stats = db.get_operator_stats(conn, env_id, FILTER_TYPE)
+            op_stats = db.get_operator_stats(conn, env_id, filter_type)
             total_op_pulls = sum(s["pulls"] for s in op_stats.values()) or 1
             op_name = pick_operator_ucb(op_stats, total_op_pulls)
 
@@ -161,13 +165,16 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
 
         time.sleep(settle)
 
-        success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+        if profile == "VOICE_UDP":
+            success, bytes_, latency_ms = voice_tester.probe()
+        else:
+            success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
         reward = scoring.compute_reward(success, latency_ms)
 
         db.record_experiment(conn, gid, env_id, domain["id"], success, bytes_, latency_ms)
         db.upsert_genome_score(conn, gid, env_id, success, reward)
         if op_name:
-            db.upsert_operator_stat(conn, env_id, FILTER_TYPE, op_name, reward)
+            db.upsert_operator_stat(conn, env_id, filter_type, op_name, reward)
 
         print(f"  -> {'OK' if success else 'fail'} ({bytes_} bytes, {latency_ms}ms), домен={domain['host']}")
 
@@ -201,7 +208,7 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS"])
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--rounds", type=int, default=20)
     ap.add_argument("--environment", default="prod-domru", help="имя окружения в таблице environments")
     ap.add_argument("--provider", default="domru")

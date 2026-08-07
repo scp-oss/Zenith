@@ -1,11 +1,40 @@
 """Hand-written seed genomes -- real zapret2 syntax, not carried over from
-the zapret1-era draft. Same shapes reused across profiles (the syntax
-doesn't depend on which profile, only the target domain does).
+the zapret1-era draft. Same shapes reused across TCP profiles (the syntax
+doesn't depend on which profile, only the target domain does) -- VOICE_UDP
+is a genuinely different protocol/family set, gets its own seed list.
 """
 from genome import Genome
 
 
 def get_seeds(profile: str) -> list:
+    if profile == "VOICE_UDP":
+        return _voice_udp_seeds(profile)
+    return _tcp_tls_seeds(profile)
+
+
+def _voice_udp_seeds(profile: str) -> list:
+    """Все взяты 1:1 из реального боевого конфига (profile 6,
+    circular_locked:key=6:proto=udp:allow_nohost=1), см.
+    genome.PROFILE_FILTERS["VOICE_UDP"] и genome.UDP_FAKE_BLOBS. Осознанно
+    НЕ включает out_range= -- в манула zapret2 такого per-instance
+    аргумента нет (только CLI-уровневый --out-range=), встречается в
+    config.default автора, но семантика не подтверждена документацией --
+    не мутируем то, что не можем объяснить."""
+    return [
+        Genome(profile=profile, family="fake", fake_payload="stun_fake", repeats=3),
+        Genome(profile=profile, family="fake", fake_payload="discord_fake", repeats=3),
+        Genome(profile=profile, family="fake", fake_payload="discord_udp_1", repeats=10),
+        Genome(profile=profile, family="fake", fake_payload="fake_default_udp", repeats=6),
+        Genome(profile=profile, family="fake", fake_payload="discord_fake", ipfrag_pos_udp=8, ipfrag_disorder=True, repeats=6),
+        Genome(profile=profile, family="fake", fake_payload="0x00", repeats=4),
+        Genome(profile=profile, family="udplen", udplen_increment=8, udplen_pattern="0xC3000001"),
+        Genome(profile=profile, family="udplen", udplen_increment=4, udplen_min=20),
+        Genome(profile=profile, family="send", ttl_mode="autottl:0,3-200", repeats=2),
+        Genome(profile=profile, family="fake", fake_payload="stun_fake", ttl_mode="autottl:0,3-20", repeats=4),
+    ]
+
+
+def _tcp_tls_seeds(profile: str) -> list:
     return [
         Genome(profile=profile, family="fake", fake_payload="fake_default_tls", ttl_mode="fixed:6"),
         Genome(profile=profile, family="fake", fake_payload="fake_default_tls", ttl_mode="autottl:1,3-64"),

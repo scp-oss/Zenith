@@ -20,11 +20,13 @@ fi
 
 if [ -f "$QUEUE_FILE" ]; then
   qnum="$(cat "$QUEUE_FILE")"
-  if iptables -t mangle -D OUTPUT -m owner --uid-owner "$SANDBOX_USER" -p tcp -j NFQUEUE --queue-num "$qnum" --queue-bypass 2>/dev/null; then
-    echo "Правило снято (очередь $qnum)."
-  else
-    echo "Правило не найдено (уже снято?)."
-  fi
+  for proto in tcp udp; do
+    if iptables -t mangle -D OUTPUT -m owner --uid-owner "$SANDBOX_USER" -p "$proto" -j NFQUEUE --queue-num "$qnum" --queue-bypass 2>/dev/null; then
+      echo "Правило для $proto снято (очередь $qnum)."
+    else
+      echo "Правило для $proto не найдено (уже снято?)."
+    fi
+  done
   rm -f "$QUEUE_FILE"
 else
   echo "Нет $QUEUE_FILE — не знаю, какой номер очереди снимать." >&2

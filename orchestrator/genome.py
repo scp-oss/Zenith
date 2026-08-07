@@ -10,7 +10,14 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
-FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder", "hostfakesplit")
+FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder", "hostfakesplit", "udplen", "send")
+
+PROFILE_FILTER_TYPE = {
+    "YT_TLS": "tcp/443",
+    "RKN_TLS": "tcp/443",
+    "DS_TLS": "tcp/443",
+    "VOICE_UDP": "udp/443",
+}
 
 # Реальные боевые фильтры per-профиль -- сверено построчно с
 # /opt/zapret2/config, 2026-08-07, ПОСЛЕ живого инцидента: песочница до
@@ -45,6 +52,19 @@ PROFILE_FILTERS = {
         "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],
+    # VOICE_UDP (профиль 6) -- порты сверены построчно с /opt/zapret2/config
+    # 2026-08-07: полный список включает не только 443, но и медиа-диапазон
+    # Discord (50000-50099) и STUN (3478-3481, 5349). circular_locked тут
+    # вызывается с allow_nohost=1 (в отличие от TCP TLS-профилей) -- у
+    # STUN/discord_ip_discovery пейлоадов нет SNI/hostname, не наш случай
+    # (см. orchestra/locked.lua), но это не влияет на geнoм-модель, только
+    # на то, как сам circular_locked матчит профиль -- песочница его не
+    # использует вообще, как и для остальных профилей.
+    "VOICE_UDP": [
+        "--filter-udp=443,2053,2083,2087,2096,8443,50000-50099,1400,3478-3481,5349,19294-19344",
+        "--filter-l7=discord,stun",
+        "--payload=discord_ip_discovery,stun",
+    ],
 }
 
 STANDARD_BLOBS = ("fake_default_tls", "fake_default_http", "fake_default_quic")
@@ -59,6 +79,15 @@ STANDARD_BLOBS = ("fake_default_tls", "fake_default_http", "fake_default_quic")
 # домена и молча no-op'ят, если не сняты (см. CLAUDE.md z2r_autobench,
 # реальный инцидент).
 TLS_FAKE_BLOBS = ("fake_default_tls", "maxru", "google_www", "tls4", "custom", "tls5")
+
+# VOICE_UDP-блобы -- те же, что реально объявлены в боевом конфиге для
+# профиля 6 (см. genome.PROFILE_FILTERS["VOICE_UDP"]) и продублированы в
+# sandbox/nfqws2_sandbox.conf.template. fake_default_udp -- встроенный,
+# как fake_default_tls, объявления не требует. "0x00" -- инлайн hex-литерал
+# (манул: "--blob=<name>:0xHEX" поддерживает hex без файла; та же форма
+# работает прямо в значении blob=/pattern= без --blob= объявления --
+# подтверждено реальным использованием в конфиге, strategy=7/8/16/17).
+UDP_FAKE_BLOBS = ("fake_default_udp", "stun_fake", "discord_fake", "discord_udp_1", "discord_udp_2", "0x00")
 
 
 def render_ttl(ttl_mode: Optional[str]) -> Optional[str]:
@@ -93,6 +122,11 @@ class Genome:
     host_template: Optional[str] = None   # hostfakesplit's host= (genhost template, e.g. 'ozon.ru') -- optional, real config mostly omits it
     disorder_after: bool = False          # hostfakesplit only -- confirmed real usage (strategy=14/15), used as a bare flag
     repeats: Optional[int] = None         # confirmed real usage: RKN_TLS strategy=1 fake:...:repeats=2
+    udplen_increment: Optional[int] = None  # udplen only -- confirmed real usage: VOICE_UDP strategy=11/12/25/26
+    udplen_min: Optional[int] = None        # udplen only
+    udplen_pattern: Optional[str] = None    # udplen only -- blob name or 0xHEX literal
+    ipfrag_pos_udp: Optional[int] = None    # standard ipfrag -- confirmed real usage: VOICE_UDP strategy=4/24/27/28/32
+    ipfrag_disorder: bool = False           # standard ipfrag
     source: str = "seed"                  # seed | mutation | crossover
     parent1_id: Optional[str] = None
     parent2_id: Optional[str] = None
@@ -100,6 +134,9 @@ class Genome:
     generation: int = 0
 
     filter_type: str = field(default="tcp/443", init=False)
+
+    def __post_init__(self):
+        self.filter_type = PROFILE_FILTER_TYPE.get(self.profile, "tcp/443")
 
     def _extra_args(self) -> list:
         extra = []
@@ -110,11 +147,26 @@ class Genome:
             extra.extend(self.fooling.split(":"))
         if self.repeats:
             extra.append(f"repeats={self.repeats}")
+        if self.ipfrag_pos_udp is not None:
+            extra.append(f"ipfrag_pos_udp={self.ipfrag_pos_udp}")
+        if self.ipfrag_disorder:
+            extra.append("ipfrag_disorder")
         return extra
 
     def render_args(self) -> str:
         if self.family == "fake":
-            head = f"fake:blob={self.fake_payload or 'fake_default_tls'}"
+            default_blob = "fake_default_udp" if self.filter_type == "udp/443" else "fake_default_tls"
+            head = f"fake:blob={self.fake_payload or default_blob}"
+        elif self.family == "udplen":
+            head = "udplen"
+            if self.udplen_increment is not None:
+                head += f":increment={self.udplen_increment}"
+            if self.udplen_min is not None:
+                head += f":min={self.udplen_min}"
+            if self.udplen_pattern:
+                head += f":pattern={self.udplen_pattern}"
+        elif self.family == "send":
+            head = "send"
         elif self.family in ("multisplit", "multidisorder"):
             head = f"{self.family}:pos={self.pos or '2'}"
             if self.fake_payload:
@@ -158,6 +210,11 @@ class Genome:
                 "host_template": self.host_template,
                 "disorder_after": self.disorder_after,
                 "repeats": self.repeats,
+                "udplen_increment": self.udplen_increment,
+                "udplen_min": self.udplen_min,
+                "udplen_pattern": self.udplen_pattern,
+                "ipfrag_pos_udp": self.ipfrag_pos_udp,
+                "ipfrag_disorder": self.ipfrag_disorder,
             },
             ensure_ascii=False,
         )
