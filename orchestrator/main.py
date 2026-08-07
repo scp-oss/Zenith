@@ -31,7 +31,8 @@ import scoring
 import seeds
 import tester
 
-CONSECUTIVE_FAIL_BAN_THRESHOLD = 4
+CONSECUTIVE_FAIL_BAN_THRESHOLD = 8
+CHECK_COOLDOWN_ROUNDS = 8  # не дёргать control чаще раза в столько раундов
 BAN_COOLDOWN_SECONDS = 1800
 BASE_SETTLE_SECONDS = 3
 MAX_SETTLE_SECONDS = 60
@@ -102,6 +103,7 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
 
     seed_pool = seeds.get_seeds(profile)
     settle = BASE_SETTLE_SECONDS
+    last_ban_check_round = -CHECK_COOLDOWN_ROUNDS
 
     for round_no in range(1, rounds + 1):
         domain = random.choice(domains)
@@ -140,7 +142,17 @@ def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
 
         print(f"  -> {'OK' if success else 'fail'} ({bytes_} bytes, {latency_ms}ms), домен={domain['host']}")
 
-        if check_ban_suspected(conn, domain["id"]):
+        # Слабых кандидатов будет много, сильных мало -- длинные полосы
+        # подряд идущих провалов сами по себе норма на этой стадии, не
+        # сигнал. check_ban_suspected срабатывает не при каждом провале, а
+        # при полосе от CONSECUTIVE_FAIL_BAN_THRESHOLD разных геномов, и
+        # даже тогда сам control не дёргаем чаще раза в
+        # CHECK_COOLDOWN_ROUNDS раундов -- иначе на плотном потоке слабых
+        # геномов (как обычно и бывает) control гоняется практически на
+        # каждом провале, впустую тратя раунды на подтверждение того же
+        # самого "не бан".
+        if round_no - last_ban_check_round >= CHECK_COOLDOWN_ROUNDS and check_ban_suspected(conn, domain["id"]):
+            last_ban_check_round = round_no
             print(f"  {CONSECUTIVE_FAIL_BAN_THRESHOLD} разных геномов подряд провалились на {domain['host']} — проверяю control перед выводом о бане...")
             if verify_not_false_positive(profile, domain):
                 print("  control сработал — не бан, просто слабые кандидаты подряд. Продолжаю без паузы.")
