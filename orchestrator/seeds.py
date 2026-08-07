@@ -19,4 +19,11 @@ def get_seeds(profile: str) -> list:
         Genome(profile=profile, family="hostfakesplit", fooling="tcp_ack=-66000:tcp_ts_up"),
         Genome(profile=profile, family="hostfakesplit", fooling="tcp_ack=-66000:tcp_ts_up", disorder_after=True),
         Genome(profile=profile, family="hostfakesplit", pos="midsld", fooling="tcp_ack=-66000:tcp_ts_up"),
+        # RKN_TLS strategy=1 (боевой конфиг) -- двухинстансная связка, тут
+        # заведены оба её "инстанса" как отдельные одноинстансные seed'ы,
+        # т.к. Genome сейчас моделирует один --lua-desync= блок за раз.
+        # Раньше их мог сгенерировать только controls.py (сырые строки);
+        # теперь модель Genome умеет то же самое (repeats=, pos-список).
+        Genome(profile=profile, family="fake", fake_payload="fake_default_tls", fooling="tcp_ts=-1000", repeats=2),
+        Genome(profile=profile, family="multisplit", pos="1,midsld"),
     ]

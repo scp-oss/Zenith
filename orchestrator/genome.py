@@ -42,6 +42,7 @@ class Genome:
     nodrop: bool = False                  # only for multisplit/multidisorder -- confirmed real usage: strategy=5 combines this with blob=
     host_template: Optional[str] = None   # hostfakesplit's host= (genhost template, e.g. 'ozon.ru') -- optional, real config mostly omits it
     disorder_after: bool = False          # hostfakesplit only -- confirmed real usage (strategy=14/15), used as a bare flag
+    repeats: Optional[int] = None         # confirmed real usage: RKN_TLS strategy=1 fake:...:repeats=2
     source: str = "seed"                  # seed | mutation | crossover
     parent1_id: Optional[str] = None
     parent2_id: Optional[str] = None
@@ -57,6 +58,8 @@ class Genome:
             extra.append(ttl_arg)
         if self.fooling:
             extra.extend(self.fooling.split(":"))
+        if self.repeats:
+            extra.append(f"repeats={self.repeats}")
         return extra
 
     def render_args(self) -> str:
@@ -107,6 +110,7 @@ class Genome:
                 "nodrop": self.nodrop,
                 "host_template": self.host_template,
                 "disorder_after": self.disorder_after,
+                "repeats": self.repeats,
             },
             ensure_ascii=False,
         )

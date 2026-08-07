@@ -120,6 +120,31 @@ def mutate_seqovl(g: Genome) -> Genome:
     return replace(g, seqovl=seqovl, source="mutation", mutation_op="mutate_seqovl")
 
 
+def mutate_add_repeats(g: Genome) -> Genome:
+    """repeats= -- confirmed real usage: RKN_TLS боевая strategy=1
+    (fake:blob=fake_default_tls:tcp_ts=-1000:repeats=2). Cycles 2 -> 3 ->
+    off, since the manual doesn't document a max and we have exactly one
+    confirmed real value (2) to anchor near."""
+    nxt = {None: 2, 2: 3}.get(g.repeats, None)
+    return replace(g, repeats=nxt, source="mutation", mutation_op="mutate_add_repeats")
+
+
+def mutate_pos_combine(g: Genome) -> Genome:
+    """Комбинирует ТЕКУЩИЙ маркер с ещё одним через запятую -- pos=
+    принимает список (манул: `100,midsld,sniext+1,...`), и реальная боевая
+    RKN_TLS strategy=1 использует именно двухмаркерный список
+    (multisplit:pos=1,midsld), а не одиночный маркер. Наша модель раньше
+    такое не генерировала (только сырые controls.py могли)."""
+    if g.family not in ("multisplit", "multidisorder", "fakeddisorder"):
+        return replace(g, source="mutation", mutation_op="mutate_pos_combine")
+    existing = (g.pos or "2").split(",")
+    for candidate in ("1", "midsld"):
+        if candidate not in existing:
+            combined = ",".join(existing + [candidate])
+            return replace(g, pos=combined, source="mutation", mutation_op="mutate_pos_combine")
+    return replace(g, pos="1,midsld", source="mutation", mutation_op="mutate_pos_combine")
+
+
 def _add_fooling(existing: str, addition: str) -> str:
     if not existing:
         return addition
@@ -143,6 +168,8 @@ OPERATORS = {
     "mutate_add_midhost": mutate_add_midhost,
     "mutate_pos": mutate_pos,
     "mutate_seqovl": mutate_seqovl,
+    "mutate_add_repeats": mutate_add_repeats,
+    "mutate_pos_combine": mutate_pos_combine,
 }
 
 # Порядок эскалации со слов автора z2r: TTL не проходит -> autottl -> DPI
@@ -157,15 +184,23 @@ OPERATORS = {
 # mutate_to_hostfakesplit идёт ближе к концу цепочки -- это самая
 # продвинутая техника разреза (замешивание фейков прямо в имя хоста),
 # логично пробовать после более простых сегментаций, а не раньше них.
+#
+# mutate_add_repeats поставлен рядом с tcp_md5 -- дешёвый, подтверждённый
+# боевой параметр (RKN_TLS strategy=1), не требует смены family.
+# mutate_pos_combine -- сразу после mutate_pos/mutate_seqovl, т.к. это тоже
+# уточнение сегментации, но воспроизводит конкретно боевой RKN_TLS
+# strategy=1 паттерн (pos=1,midsld), который одиночные маркеры не покрывают.
 ESCALATION_ORDER = [
     "mutate_ttl_fixed",
     "mutate_ttl_autottl",
     "mutate_add_tcp_ts",
     "mutate_add_tcp_md5",
+    "mutate_add_repeats",
     "mutate_to_multisplit",
     "mutate_add_blob_nodrop",
     "mutate_pos",
     "mutate_seqovl",
+    "mutate_pos_combine",
     "mutate_to_multidisorder",
     "mutate_to_fakeddisorder",
     "mutate_to_hostfakesplit",
