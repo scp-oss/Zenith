@@ -249,15 +249,16 @@ sync, не на каждый раунд генерации. Ниже -- когд
    echo "MYSQL_BIND_HOST=0.0.0.0" >> /opt/z2r_autobench/Zenith/.env
    cd /opt/z2r_autobench/Zenith && docker compose up -d
    sudo ./db/mysql_node_allowlist.sh add <IP ноды>
-   sudo ./db/create_remote_db_user.sh <имя ноды> <IP ноды>
-   # выведет MYSQL_USER/MYSQL_PASSWORD -- ОДИН раз, сохрани сразу
+   sudo ./db/create_remote_db_user.sh <имя ноды> <IP ноды> <провайдер>
+   # выведет готовый блок KEY=value (флеш-лефт, между маркерами) --
+   # включает MYSQL_HOST (автоопределён), MYSQL_USER/PASSWORD (ОДИН раз,
+   # сохрани сразу), ZENITH_ENVIRONMENT_NAME/PROVIDER -- копируется
+   # целиком, без ручного набора по полю
 
-   # На САМОЙ ноде -- в её Zenith/.env (или через сам z0r, пункт 22,
-   # выбор "3" в меню БД):
-   #   ZENITH_DB_MODE=external
-   #   MYSQL_HOST=<публичный IP/домен центрального сервера>
-   #   MYSQL_USER=<то, что вывел create_remote_db_user.sh>
-   #   MYSQL_PASSWORD=<то же>
+   # На САМОЙ ноде -- z0r, пункт 22, выбор "3" в меню БД, вставить
+   # скопированный блок целиком, когда спросит (по мотивам того, как
+   # Remnawave выдаёт готовый docker-compose.yml с подставленными
+   # значениями вместо ручного ввода host/port/token по отдельности).
    ```
    `create_remote_db_user.sh` даёт `SELECT`/`INSERT`/`UPDATE` только на
    рабочие таблицы (`genomes`, `genome_scores`, `experiments`,

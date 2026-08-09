@@ -11,14 +11,16 @@
 # UPDATE на рабочие таблицы. НЕ включает DROP/ALTER/CREATE/DELETE (истории
 # не удаляют, только копят) и НЕ включает доступ к другим схемам вообще.
 #
-#   sudo ./create_remote_db_user.sh <имя_ноды> <IP_ноды>
-#   sudo ./create_remote_db_user.sh vm-rostelecom 203.0.113.5
+#   sudo ./create_remote_db_user.sh <имя_ноды> <IP_ноды> <провайдер>
+#   sudo ./create_remote_db_user.sh vm-rostelecom 203.0.113.5 rostelecom
 #
 # Запускать НА центральном сервере (там, где сама БД), не на ноде.
 set -euo pipefail
 
-NODE_NAME="${1:?Использование: $0 <имя_ноды> <IP_ноды>}"
-NODE_IP="${2:?Использование: $0 <имя_ноды> <IP_ноды>}"
+USAGE="Использование: $0 <имя_ноды> <IP_ноды> <провайдер>"
+NODE_NAME="${1:?$USAGE}"
+NODE_IP="${2:?$USAGE}"
+NODE_PROVIDER="${3:?$USAGE}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ZENITH_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -50,14 +52,28 @@ FLUSH PRIVILEGES;
 cd "$ZENITH_DIR"
 echo "$SQL" | docker compose exec -T mysql mysql -u root -p"$MYSQL_ROOT_PASSWORD"
 
+# Автоопределение публичного IP этого сервера -- лучшее усилие, не
+# критично: если недоступно (нет исходящего интернета до сервиса
+# определения IP), просто оставляем плейсхолдер, оператор впишет сам.
+PUBLIC_HOST="$(curl -fsSL --max-time 3 https://ifconfig.me 2>/dev/null || true)"
+PUBLIC_HOST="${PUBLIC_HOST:-<публичный IP или домен этого сервера>}"
+
 echo ""
-echo "Готово. На ноде ($NODE_NAME) в Zenith/.env (режим 3, ZENITH_DB_MODE=external):"
-echo "  MYSQL_HOST=<публичный IP или домен этого сервера>"
-echo "  MYSQL_PORT=3306"
-echo "  MYSQL_DATABASE=${MYSQL_DATABASE}"
-echo "  MYSQL_USER=${DB_USER}"
-echo "  MYSQL_PASSWORD=${PASSWORD}"
+echo "Готово для ноды \"$NODE_NAME\" (node_uuid тут не нужен -- это MySQL-юзер,"
+echo "не HTTP-токен панели). На самой ноде -- z0r пункт 22, режим БД 3, вставь"
+echo "блок ЦЕЛИКОМ (флеш-лефт, ниже маркеров, без изменений):"
+echo "--- (копировать отсюда) ---"
+echo "MYSQL_HOST=${PUBLIC_HOST}"
+echo "MYSQL_PORT=3306"
+echo "MYSQL_DATABASE=${MYSQL_DATABASE}"
+echo "MYSQL_USER=${DB_USER}"
+echo "MYSQL_PASSWORD=${PASSWORD}"
+echo "ZENITH_ENVIRONMENT_NAME=${NODE_NAME}"
+echo "ZENITH_ENVIRONMENT_PROVIDER=${NODE_PROVIDER}"
+echo "--- (докопировать досюда) ---"
 echo ""
-echo "Пароль показан ОДИН раз, сохрани сейчас. Не забудь также:"
+echo "Пароль показан ОДИН раз, сохрани сейчас. Если MYSQL_HOST выше не"
+echo "определился (плейсхолдер в угловых скобках) -- впиши публичный IP/домен"
+echo "этого сервера сам перед вставкой на ноде. Не забудь также:"
 echo "  1. MYSQL_BIND_HOST=0.0.0.0 в $ZENITH_DIR/.env + docker compose up -d (если ещё не сделано)"
 echo "  2. sudo $SCRIPT_DIR/mysql_node_allowlist.sh add $NODE_IP"
