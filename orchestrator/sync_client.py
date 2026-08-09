@@ -35,7 +35,7 @@ def cmd_push(profile: str, environment_name: str, provider: str) -> int:
         print(f"Нечего отправлять для {profile} в {environment_name} (нет локальных прогонов).")
         return 0
 
-    result = panel_client.push(genomes, scores)
+    result = panel_client.push(genomes, scores, environment_name, provider)
     print(f"Отправлено: {result['genomes_seen']} геномов, {result['scores_seen']} записей score "
           f"(нода на панели: {result['node']}).")
     return 0
@@ -44,7 +44,7 @@ def cmd_push(profile: str, environment_name: str, provider: str) -> int:
 def cmd_pull(profile: str, environment_name: str, provider: str, min_pulls: int, limit: int) -> int:
     conn = db.connect()
     env_id = db.get_or_create_environment(conn, environment_name, provider)
-    result = panel_client.pull(profile, min_pulls=min_pulls, limit=limit)
+    result = panel_client.pull(profile, environment_name, provider, min_pulls=min_pulls, limit=limit)
     inserted = 0
     for c in result["candidates"]:
         db.insert_sync_import_genome(conn, profile, c["params_json"], c["generation"])

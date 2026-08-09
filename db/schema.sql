@@ -15,16 +15,23 @@ USE z2r_genome;
 -- работать со своей ЛОКАЛЬНОЙ БД даже если панель временно недоступна).
 -- api_token_hash != NULL -- это удалённая нода, синкающаяся через
 -- panel/sync_api.py, а не локальный процесс, пишущий в БД напрямую.
+-- Токен создаётся ПУСТЫМ (только node_uuid) -- name/provider панель не
+-- просит вводить заранее в UI, нода сообщает их САМА при первом push из
+-- своих ZENITH_ENVIRONMENT_NAME/PROVIDER (.env, см. orchestrator/config.py)
+-- -- то же значение не нужно вводить второй раз в веб-форме. До первого
+-- контакта name = 'pending-<uuid8>', provider = NULL.
 CREATE TABLE environments (
     id              INT AUTO_INCREMENT PRIMARY KEY,
-    name            VARCHAR(64) NOT NULL UNIQUE,   -- 'prod-domru', 'vm-rostelecom', 'vm-mts'
-    provider        VARCHAR(64) NOT NULL,          -- 'domru', 'rostelecom', 'mts'
+    name            VARCHAR(64) NOT NULL UNIQUE,   -- 'prod-domru', 'vm-rostelecom', 'vm-mts', или 'pending-<uuid8>' до первого push
+    provider        VARCHAR(64) NULL,              -- 'domru', 'rostelecom', 'mts'; NULL пока нода не отчиталась сама
     is_production   BOOLEAN NOT NULL DEFAULT FALSE, -- прод-сервер = TRUE, остальные ВМ для рискованных тестов
     active          BOOLEAN NOT NULL DEFAULT TRUE,
     api_token_hash  CHAR(64) NULL,                 -- sha256(токена) удалённой ноды; NULL = локальная запись
+    node_uuid       CHAR(36) NULL,                 -- стабильный идентификатор ноды, выдаётся при создании токена
     last_sync_at    TIMESTAMP NULL,                -- последний успешный push от этой ноды
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_api_token_hash (api_token_hash)
+    UNIQUE KEY uniq_api_token_hash (api_token_hash),
+    UNIQUE KEY uniq_node_uuid (node_uuid)
 );
 
 -- Геном одного протокольного блока (tcp/80, tcp/443, udp/443 — по аналогии

@@ -38,7 +38,7 @@ SETTLE_SECONDS = 3
 
 def run(profile: str, environment_name: str, provider: str, min_pulls: int, limit: int) -> int:
     try:
-        result = panel_client.bootstrap(profile, min_pulls=min_pulls, limit=limit)
+        result = panel_client.bootstrap(profile, environment_name, provider, min_pulls=min_pulls, limit=limit)
     except panel_client.PanelError as e:
         print(f"Панель недоступна ({e}) -- пропускаю bootstrap, сразу main.py с сидами.", file=sys.stderr)
         return 1
