@@ -10,3 +10,8 @@ sandbox/queue_num
 sandbox/nfqws2_sandbox.conf
 sandbox/nfqws2_sandbox.pid
 sandbox/nfqws2_sandbox.debug.log
+
+# реальный Caddyfile с настоящим хостнеймом/портом -- см.
+# panel/Caddyfile.example (шаблон, в git) и README "Публикация панели
+# через Cloudflare"
+panel/Caddyfile

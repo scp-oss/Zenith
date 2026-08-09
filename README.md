@@ -315,19 +315,19 @@ sudo nano /etc/caddy/cf-origin.pem       # вставить Origin Certificate
 sudo nano /etc/caddy/cf-origin-key.pem   # вставить Private Key
 sudo chmod 600 /etc/caddy/cf-origin-key.pem
 
-# 3. Caddy (официальный репозиторий, не из дефолтного apt):
-sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt-get update && sudo apt-get install -y caddy
+# 3. Caddy -- В DOCKER, не системным пакетом (боевой сервер может уже
+#    использовать системный caddy/тот же порт под что-то другое вне
+#    этого репо -- по прямому запросу изолируем в контейнер, а не ставим
+#    в систему). network_mode: host обязателен -- см. комментарий в
+#    panel/docker-compose.yml (короткая версия: панель слушает строго
+#    127.0.0.1 на хосте, обычный bridge-сети контейнера туда не видит).
+cd /opt/z2r_autobench/Zenith/panel
+cp Caddyfile.example Caddyfile
+sed -i 's/PANEL_HOSTNAME/<твой хост, напр. panel.example.com>/; s/PANEL_PUBLIC_PORT/<порт>/' Caddyfile
+sudo docker compose up -d
+sudo docker compose logs -f caddy   # Ctrl+C, когда убедился что стартовал без ошибок
 
-# 4. Caddyfile -- см. panel/Caddyfile.example, подставь PANEL_HOSTNAME и
-#    PANEL_PUBLIC_PORT (один из шести портов выше):
-sudo cp /opt/z2r_autobench/Zenith/panel/Caddyfile.example /etc/caddy/Caddyfile
-sudo sed -i 's/PANEL_HOSTNAME/<твой хост, напр. panel.example.com>/; s/PANEL_PUBLIC_PORT/<порт>/' /etc/caddy/Caddyfile
-sudo systemctl reload caddy
-
-# 5. Порт снаружи должен светить ТОЛЬКО Cloudflare, не всему интернету --
+# 4. Порт снаружи должен светить ТОЛЬКО Cloudflare, не всему интернету --
 #    panel/cloudflare_iptables.sh ставит ipset+iptables allowlist по
 #    официальным диапазонам Cloudflare (обновляется по крону, диапазоны
 #    изредка меняются):
