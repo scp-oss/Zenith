@@ -187,4 +187,14 @@ def controls_page(request: Request, user: str = Depends(auth.require_login)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=config.PANEL_HOST, port=config.PANEL_PORT)
+
+    if config.PANEL_TLS_CERT and config.PANEL_TLS_KEY:
+        # Публичный TLS-порт -- слушаем на всех интерфейсах вне
+        # зависимости от PANEL_HOST (та настройка -- только для
+        # HTTP-fallback-режима ниже).
+        uvicorn.run(
+            app, host="0.0.0.0", port=config.PANEL_PORT,
+            ssl_certfile=config.PANEL_TLS_CERT, ssl_keyfile=config.PANEL_TLS_KEY,
+        )
+    else:
+        uvicorn.run(app, host=config.PANEL_HOST, port=config.PANEL_PORT)

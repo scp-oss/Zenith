@@ -41,12 +41,19 @@ PANEL_ADMIN_PASSWORD_HASH = _get("PANEL_ADMIN_PASSWORD_HASH", "")
 PANEL_SESSION_SECRET = _get("PANEL_SESSION_SECRET", "")
 
 
-# Дефолт -- 127.0.0.1: панель не смотрит в интернет сама. Публичный вход --
-# Caddy (443 обычно занят на хосте, слушает альт-порт Cloudflare) с
-# Origin CA сертификатом, реверс-прокси на этот же 127.0.0.1:PANEL_PORT
-# (см. README "Публикация панели через Cloudflare"). Меняй на 0.0.0.0
-# только если сознательно НЕ используешь Caddy/reverse proxy перед ней --
-# тогда логин будет идти голым HTTP, см. предупреждение в README.
+# TLS -- панель терминирует HTTPS САМА (uvicorn ssl_certfile/ssl_keyfile),
+# без отдельного Caddy/nginx/Docker: для одного админ-логина за Cloudflare
+# отдельный reverse-proxy процесс не даёт ничего, чего не даёт сам
+# uvicorn, только лишняя точка отказа (см. README "Публикация панели
+# через Cloudflare" -- живой пример, где это аукнулось: apt purge снёс
+# сертификаты вместе с пакетом, Docker bind-mount тихо подменил
+# отсутствующий файл директорией). Заданы PANEL_TLS_CERT/PANEL_TLS_KEY --
+# слушаем 0.0.0.0:PANEL_PORT с TLS (PANEL_PORT тогда = тот самый
+# альт-порт Cloudflare, напр. 2087). Не заданы -- голый HTTP на
+# PANEL_HOST (дефолт 127.0.0.1) -- для локальной разработки или если
+# TLS-терминацию всё же решили вынести во внешний reverse-proxy.
+PANEL_TLS_CERT = _get("PANEL_TLS_CERT", "")
+PANEL_TLS_KEY = _get("PANEL_TLS_KEY", "")
 PANEL_HOST = _get("PANEL_HOST", "127.0.0.1")
 PANEL_PORT = int(_get("PANEL_PORT", "8766"))
 # Secure-флаг на сессионной cookie -- отключай только для локальной

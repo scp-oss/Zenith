@@ -270,22 +270,21 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now zenith-panel
 ```
 
-**Слушает на внешнем порту (`PANEL_PORT`, по умолчанию 8766) по прямому
-запросу** -- логин/пароль защищает вход, но сам HTTP по умолчанию БЕЗ TLS
-(пароль и сессионная cookie идут в открытом виде). Для боевого
-использования настоятельно рекомендуется поставить перед панелью reverse
-proxy с HTTPS (nginx + certbot/Let's Encrypt) -- сама панель этого не
-делает, вне её зоны ответственности (нет exec-доступа для настройки nginx
-отсюда, только эти инструкции).
+Из коробки (без `PANEL_TLS_CERT`/`PANEL_TLS_KEY`) панель слушает голый
+HTTP на `127.0.0.1` -- этого достаточно для локальной проверки, но
+**наружу в таком виде не публикуй**: пароль и сессионная cookie пойдут в
+открытом виде. Для боевого использования (доступ снаружи, по прямому
+запросу) см. следующий раздел "Публикация панели через Cloudflare" --
+TLS терминирует сама панель, отдельный reverse proxy не нужен.
 
 Добавить удалённую ноду: `/nodes` в UI -> имя+провайдер -> токен
 показывается один раз -> на удалённой ноде в `.env`:
 ```
-PANEL_URL=http://<адрес-панели>:8766
+PANEL_URL=https://<хост-панели>:<альт-порт Cloudflare, напр. 2087>
 PANEL_NODE_TOKEN=<токен>
 ```
 
-### Публикация панели через Cloudflare (Caddy + Origin CA, без Let's Encrypt)
+### Публикация панели через Cloudflare (TLS прямо в uvicorn, без Caddy/Docker)
 
 443 на хосте обычно уже занят чем-то другим -- используем один из
 альтернативных HTTPS-портов, которые Cloudflare вообще проксирует на
@@ -296,8 +295,17 @@ orange-cloud записях: **443, 2053, 2083, 2087, 2096, 8443** (и толь�
 443 -- HTTP-01/TLS-ALPN-01 челленджам тоже нужны 80/443. Вместо этого --
 **Cloudflare Origin CA**: сертификат на 15 лет, выпускается вручную в
 дашборде Cloudflare без единого челленджа, доверен только самим
-Cloudflare (это и требуется -- напрямую по IP, минуя Cloudflare, панель
-трогать не должны).
+Cloudflare (это и требуется -- напрямую, минуя Cloudflare, панель трогать
+не должны).
+
+Отдельного Caddy/nginx перед панелью нет -- `uvicorn` (на котором и так
+работает FastAPI-панель) умеет терминировать TLS сам
+(`ssl_certfile`/`ssl_keyfile`), сертификату всё равно, кто его читает.
+Для одного админ-логина за Cloudflare отдельный reverse-proxy процесс не
+добавляет ничего, чего не даёт сам uvicorn -- только лишнюю точку отказа
+(на практике так и вышло: `apt purge` снёс сертификаты вместе с пакетом,
+а Docker bind-mount на отсутствующий файл тихо подменил его директорией
+-- два независимых сбоя ради слоя, который тут не нужен).
 
 ```bash
 # 1. В дашборде Cloudflare для зоны домена:
@@ -306,26 +314,28 @@ Cloudflare (это и требуется -- напрямую по IP, минуя
 #    SSL/TLS -> Overview -> Encryption mode: Full (strict).
 #    SSL/TLS -> Origin Server -> Create Certificate -> RSA, hostnames =
 #    PANEL_HOSTNAME, 15 years -> сохрани Origin Certificate и Private Key
-#    (private key больше нигде не показывается повторно).
+#    (private key больше нигде не показывается повторно -- сохрани его
+#    себе отдельно, напр. в менеджере паролей, ДО того как закрыть
+#    страницу Cloudflare).
 
 # 2. На сервере -- вставь скопированные из дашборда PEM'ы (набери команду
-#    сам, не вставляй приватный ключ в чат/куда-либо ещё):
-sudo mkdir -p /etc/caddy
-sudo nano /etc/caddy/cf-origin.pem       # вставить Origin Certificate
-sudo nano /etc/caddy/cf-origin-key.pem   # вставить Private Key
-sudo chmod 600 /etc/caddy/cf-origin-key.pem
+#    сам, не вставляй приватный ключ в чат/куда-либо ещё). Владелец --
+#    юзер, от которого работает панель (zenith-panel, см. "Установка
+#    панели" выше), не root -- панели самой нужно их читать при старте:
+sudo mkdir -p /etc/zenith-panel
+sudo nano /etc/zenith-panel/cf-origin.pem       # вставить Origin Certificate
+sudo nano /etc/zenith-panel/cf-origin-key.pem   # вставить Private Key
+sudo chown zenith-panel:zenith-panel /etc/zenith-panel/cf-origin.pem /etc/zenith-panel/cf-origin-key.pem
+sudo chmod 600 /etc/zenith-panel/cf-origin-key.pem
 
-# 3. Caddy -- В DOCKER, не системным пакетом (боевой сервер может уже
-#    использовать системный caddy/тот же порт под что-то другое вне
-#    этого репо -- по прямому запросу изолируем в контейнер, а не ставим
-#    в систему). network_mode: host обязателен -- см. комментарий в
-#    panel/docker-compose.yml (короткая версия: панель слушает строго
-#    127.0.0.1 на хосте, обычный bridge-сети контейнера туда не видит).
-cd /opt/z2r_autobench/Zenith/panel
-cp Caddyfile.example Caddyfile
-sed -i 's/PANEL_HOSTNAME/<твой хост, напр. panel.example.com>/; s/PANEL_PUBLIC_PORT/<порт>/' Caddyfile
-sudo docker compose up -d
-sudo docker compose logs -f caddy   # Ctrl+C, когда убедился что стартовал без ошибок
+# 3. В Zenith/.env (PANEL_PORT теперь = сам этот альт-порт Cloudflare,
+#    не внутренний 8766 -- панель слушает его напрямую, TLS уже внутри):
+PANEL_TLS_CERT=/etc/zenith-panel/cf-origin.pem
+PANEL_TLS_KEY=/etc/zenith-panel/cf-origin-key.pem
+PANEL_PORT=<порт из списка выше, напр. 2087>
+
+sudo systemctl restart zenith-panel
+sudo systemctl status zenith-panel --no-pager
 
 # 4. Порт снаружи должен светить ТОЛЬКО Cloudflare, не всему интернету --
 #    panel/cloudflare_iptables.sh ставит ipset+iptables allowlist по
@@ -337,11 +347,13 @@ sudo /opt/z2r_autobench/Zenith/panel/cloudflare_iptables.sh <порт>
 echo "0 4 * * * root /opt/z2r_autobench/Zenith/panel/cloudflare_iptables.sh <порт> >> /var/log/cf-iptables.log 2>&1" | sudo tee /etc/cron.d/cf-iptables
 ```
 
-Панель сама после этого держится строго на `127.0.0.1:8766` (см.
-`PANEL_HOST` в `.env` -- дефолт уже `127.0.0.1`, менять не нужно) --
-единственная точка входа снаружи -- Caddy. Сессионная cookie ставится с
-флагом `Secure` (`PANEL_COOKIE_HTTPS_ONLY=true`, дефолт), т.к. до браузера
-теперь всегда доходит по HTTPS через Caddy.
+Панель после этого слушает `0.0.0.0:<порт>` НАПРЯМУЮ (см. `main.py` --
+как только заданы `PANEL_TLS_CERT`/`PANEL_TLS_KEY`, `PANEL_HOST`
+игнорируется, это уже не loopback-режим). Порт >1024 -- отдельных
+capabilities/root для биндинга не нужно, `zenith-panel` как был
+непривилегированным, так и остаётся. Сессионная cookie ставится с флагом
+`Secure` (`PANEL_COOKIE_HTTPS_ONLY=true`, дефолт), т.к. до браузера теперь
+всегда доходит по HTTPS.
 
 ## Статус: работает v1, с упрощениями
 
