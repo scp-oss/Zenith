@@ -154,6 +154,55 @@ def recent_domain_experiments(conn, domain_id, limit=5):
     return cur.fetchall()
 
 
+def export_for_sync(conn, environment_id, profile=None):
+    """Снапшот genomes+genome_scores этого окружения для sync_client.py
+    push -- панель заменяет (не суммирует) значения по этому genome_id,
+    так что тут нужен ПОЛНЫЙ текущий снимок, не дельта с прошлого раза
+    (см. panel/db.py::sync_push)."""
+    cur = conn.cursor(dictionary=True)
+    query = """SELECT g.id, g.profile, g.filter_type, g.family, g.fooling, g.ttl_mode,
+                      g.fake_payload, g.params_json, g.rendered_args, g.source,
+                      g.parent1_id, g.parent2_id, g.mutation_op, g.generation,
+                      gs.pulls, gs.successes, gs.total_reward
+               FROM genome_scores gs
+               JOIN genomes g ON g.id = gs.genome_id
+               WHERE gs.environment_id = %s AND gs.pulls > 0"""
+    params = [environment_id]
+    if profile:
+        query += " AND g.profile = %s"
+        params.append(profile)
+    cur.execute(query, params)
+    rows = cur.fetchall()
+
+    genomes, scores = [], []
+    for row in rows:
+        genomes.append({
+            "id": row["id"], "profile": row["profile"], "filter_type": row["filter_type"],
+            "family": row["family"], "fooling": row["fooling"], "ttl_mode": row["ttl_mode"],
+            "fake_payload": row["fake_payload"],
+            "params_json": json.loads(row["params_json"]) if isinstance(row["params_json"], str) else row["params_json"],
+            "rendered_args": row["rendered_args"], "source": row["source"],
+            "parent1_id": row["parent1_id"], "parent2_id": row["parent2_id"],
+            "mutation_op": row["mutation_op"], "generation": row["generation"],
+        })
+        scores.append({
+            "genome_id": row["id"], "pulls": row["pulls"],
+            "successes": row["successes"], "total_reward": row["total_reward"],
+        })
+    return genomes, scores
+
+
+def insert_sync_import_genome(conn, profile: str, params: dict, generation: int) -> str:
+    """Кандидат, затянутый с панели (pull/bootstrap) -- ещё ни разу не
+    пробовался локально (genome_scores для него тут нет), source
+    промаркирован отдельно, чтобы отличать от локальных мутаций при
+    разборе истории (см. panel genome.html)."""
+    import genome as genome_mod
+    g = genome_mod.from_params(profile, params, generation)
+    g.source = "sync_import"
+    return insert_genome(conn, g)
+
+
 def log_ban_event(conn, environment_id, domain_id, reason, cooldown_seconds):
     cur = conn.cursor()
     cur.execute(

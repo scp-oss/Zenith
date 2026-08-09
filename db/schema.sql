@@ -5,13 +5,26 @@ CREATE DATABASE IF NOT EXISTS z2r_genome CHARACTER SET utf8mb4;
 USE z2r_genome;
 
 -- Точки тестирования: сейчас прод-сервер (дом.ру), позже + ВМ ростелеком/МТС.
+--
+-- Панель (panel/) живёт на том же сервере, что и прод-нода, и делит с ней
+-- эту же БД напрямую -- отдельной схемы для панели нет. Удалённые ноды
+-- (другие провайдеры) MySQL-доступа НЕ получают вообще (порт наружу не
+-- открывается -- решение сознательно ушло от roadmap-пункта "вынести
+-- MySQL за localhost" в сторону hub-and-spoke: ноды толкают снапшот по
+-- HTTP с собственным токеном, песочница/main.py каждой ноды продолжает
+-- работать со своей ЛОКАЛЬНОЙ БД даже если панель временно недоступна).
+-- api_token_hash != NULL -- это удалённая нода, синкающаяся через
+-- panel/sync_api.py, а не локальный процесс, пишущий в БД напрямую.
 CREATE TABLE environments (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    name          VARCHAR(64) NOT NULL UNIQUE,   -- 'prod-domru', 'vm-rostelecom', 'vm-mts'
-    provider      VARCHAR(64) NOT NULL,          -- 'domru', 'rostelecom', 'mts'
-    is_production BOOLEAN NOT NULL DEFAULT FALSE, -- прод-сервер = TRUE, остальные ВМ для рискованных тестов
-    active        BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    name            VARCHAR(64) NOT NULL UNIQUE,   -- 'prod-domru', 'vm-rostelecom', 'vm-mts'
+    provider        VARCHAR(64) NOT NULL,          -- 'domru', 'rostelecom', 'mts'
+    is_production   BOOLEAN NOT NULL DEFAULT FALSE, -- прод-сервер = TRUE, остальные ВМ для рискованных тестов
+    active          BOOLEAN NOT NULL DEFAULT TRUE,
+    api_token_hash  CHAR(64) NULL,                 -- sha256(токена) удалённой ноды; NULL = локальная запись
+    last_sync_at    TIMESTAMP NULL,                -- последний успешный push от этой ноды
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_api_token_hash (api_token_hash)
 );
 
 -- Геном одного протокольного блока (tcp/80, tcp/443, udp/443 — по аналогии
@@ -35,7 +48,11 @@ CREATE TABLE genomes (
     fake_payload   VARCHAR(128) NULL,              -- id blob'а / 'clone:<domain>' / 'synthetic'
     params_json    JSON NOT NULL,                  -- полный набор параметров-генов как есть
     rendered_args  TEXT NOT NULL,                  -- готовая строка для --lua-desync=...
-    source         ENUM('seed','mutation','crossover','research_agent','manual') NOT NULL,
+    -- sync_import -- геном пришёл из panel/sync_api.py pull (найден на
+    -- ДРУГОЙ ноде/провайдере), локально ещё ни разу не пробовался, пока
+    -- нет genome_scores для этого environment_id -- main.py подбирает его
+    -- наравне с сидами, а не как уже проверенного кандидата.
+    source         ENUM('seed','mutation','crossover','research_agent','manual','sync_import') NOT NULL,
     parent1_id     CHAR(64) NULL REFERENCES genomes(id),
     parent2_id     CHAR(64) NULL REFERENCES genomes(id), -- заполнен только при crossover
     mutation_op    VARCHAR(64) NULL,              -- 'mutate_tcp_ttl', 'mutate_tcp_fooling', ... — какой оператор породил
