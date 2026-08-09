@@ -181,7 +181,16 @@ venv/bin/pip install -r requirements.txt
 sudo venv/bin/python3 main.py --profile VOICE_UDP --rounds 20
 ```
 
-## Веб-панель и мульти-провайдерный sync (`panel/`)
+## Веб-панель и мульти-провайдерный sync
+
+Панель (обзор стратегий по нодам/провайдерам, история мутаций, read-only
+статус боевых стратегий) -- **отдельный репозиторий**,
+[scp-oss/z0r-panel](https://github.com/scp-oss/z0r-panel) (раньше была
+вложенной `Zenith/panel/`, выделена по прямому запросу; установка,
+`.env`, публикация через Cloudflare -- см. его README). Здесь, в Zenith,
+остаётся только клиентская часть протокола sync -- `orchestrator/
+sync_client.py` и `orchestrator/bootstrap.py`, которыми ноды с ней
+общаются по HTTP.
 
 По запросу: единая точка для (1) органов управления, (2) обзора стратегий
 по провайдерам, (3) истории мутаций конкретных геномов, и (4) накопления
@@ -219,7 +228,7 @@ python3 bootstrap.py --profile RKN_TLS
 ```
 
 `GET /api/v1/sync/bootstrap` на панели возвращает два яруса кандидатов
-(`panel/db.py::bootstrap_candidates`):
+(`bootstrap_candidates` в БД-слое z0r-panel):
 1. **provider** -- геномы со 100%-успехом у ЭТОГО ЖЕ провайдера (по
    `environments.provider` токена ноды) на других нодах;
 2. **universal** -- геномы со 100%-успехом сразу у 2+ разных провайдеров
@@ -238,126 +247,10 @@ python3 bootstrap.py --profile RKN_TLS
 `family`+`fooling`+`ttl_mode` -- уже переносимый уровень паттерна
 ("fake с autottl", "multidisorder+seqovl" и т.п., как и описано в
 "Принципы генерации" п.2 выше). Страница `/knowledge` на панели --
-group-by этого уровня по всем профилям/провайдерам разом
-(`panel/db.py::knowledge_family_rollup`), с колонкой "сколько разных
-провайдеров" -- чем больше, тем более общий, не-провайдер-специфичный
-приём. Копится сама по себе по мере того, как ноды синкаются -- ручного
-курирования не требует.
-
-### Установка панели
-
-```bash
-# 1. Миграция БД, если ставится на УЖЕ работающую (не свежую) БД:
-mysql -u zenith -p z2r_genome < db/migrations/001_panel_sync.sql
-
-# 2. Отдельный системный юзер под панель -- ей нужен доступ к MySQL
-#    (по паролю из .env, как у orchestrator) и read-only sudo на
-#    set_strategy_cli.sh get/max для страницы /controls (НИКОГДА set --
-#    панель ничего не применяет в боевой конфиг сама, см. panel/main.py
-#    docstring "Границы ответственности панели").
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin zenith-panel
-echo 'zenith-panel ALL=(root) NOPASSWD: /usr/bin/bash /opt/z2r_autobench/set_strategy_cli.sh get *, /usr/bin/bash /opt/z2r_autobench/set_strategy_cli.sh max *' \
-  | sudo tee /etc/sudoers.d/zenith-panel
-sudo chmod 440 /etc/sudoers.d/zenith-panel
-
-cd panel
-python3 -m venv venv && venv/bin/pip install -r requirements.txt
-venv/bin/python3 gen_password_hash.py   # впиши результат в Zenith/.env как PANEL_ADMIN_PASSWORD_HASH
-python3 -c 'import secrets; print(secrets.token_hex(32))'   # -> PANEL_SESSION_SECRET в .env
-
-sudo cp zenith-panel.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now zenith-panel
-```
-
-Из коробки (без `PANEL_TLS_CERT`/`PANEL_TLS_KEY`) панель слушает голый
-HTTP на `127.0.0.1` -- этого достаточно для локальной проверки, но
-**наружу в таком виде не публикуй**: пароль и сессионная cookie пойдут в
-открытом виде. Для боевого использования (доступ снаружи, по прямому
-запросу) см. следующий раздел "Публикация панели через Cloudflare" --
-TLS терминирует сама панель, отдельный reverse proxy не нужен.
-
-Добавить удалённую ноду: `/nodes` в UI -> имя+провайдер -> токен
-показывается один раз -> на удалённой ноде в `.env`:
-```
-PANEL_URL=https://<хост-панели>:<альт-порт Cloudflare, напр. 2087>
-PANEL_NODE_TOKEN=<токен>
-```
-
-### Публикация панели через Cloudflare (TLS прямо в uvicorn, без Caddy/Docker)
-
-443 на хосте обычно уже занят чем-то другим -- используем один из
-альтернативных HTTPS-портов, которые Cloudflare вообще проксирует на
-orange-cloud записях: **443, 2053, 2083, 2087, 2096, 8443** (и только
-их -- на любой другой порт проксируемый трафик Cloudflare не дойдёт, это
-жёсткое ограничение на стороне Cloudflare, не завязано на блокировки
-провайдера). Let's Encrypt тут не подходит по той же причине, что и порт
-443 -- HTTP-01/TLS-ALPN-01 челленджам тоже нужны 80/443. Вместо этого --
-**Cloudflare Origin CA**: сертификат на 15 лет, выпускается вручную в
-дашборде Cloudflare без единого челленджа, доверен только самим
-Cloudflare (это и требуется -- напрямую, минуя Cloudflare, панель трогать
-не должны).
-
-Отдельного Caddy/nginx перед панелью нет -- `uvicorn` (на котором и так
-работает FastAPI-панель) умеет терминировать TLS сам
-(`ssl_certfile`/`ssl_keyfile`), сертификату всё равно, кто его читает.
-Для одного админ-логина за Cloudflare отдельный reverse-proxy процесс не
-добавляет ничего, чего не даёт сам uvicorn -- только лишнюю точку отказа
-(на практике так и вышло: `apt purge` снёс сертификаты вместе с пакетом,
-а Docker bind-mount на отсутствующий файл тихо подменил его директорией
--- два независимых сбоя ради слоя, который тут не нужен).
-
-```bash
-# 1. В дашборде Cloudflare для зоны домена:
-#    DNS -> Add record -> A, имя PANEL_HOSTNAME, значение = публичный IP
-#    сервера, Proxy status: Proxied (оранжевое облако).
-#    SSL/TLS -> Overview -> Encryption mode: Full (strict).
-#    SSL/TLS -> Origin Server -> Create Certificate -> RSA, hostnames =
-#    PANEL_HOSTNAME, 15 years -> сохрани Origin Certificate и Private Key
-#    (private key больше нигде не показывается повторно -- сохрани его
-#    себе отдельно, напр. в менеджере паролей, ДО того как закрыть
-#    страницу Cloudflare).
-
-# 2. На сервере -- вставь скопированные из дашборда PEM'ы (набери команду
-#    сам, не вставляй приватный ключ в чат/куда-либо ещё). Живут ВНУТРИ
-#    репозитория (panel/tls/, в .gitignore -- никогда не коммитятся), не
-#    раскиданы по /etc. Владелец -- юзер, от которого работает панель
-#    (zenith-panel, см. "Установка панели" выше), не root -- панели самой
-#    нужно их читать при старте:
-cd /opt/z2r_autobench/Zenith/panel
-mkdir -p tls
-sudo nano tls/cf-origin.pem       # вставить Origin Certificate
-sudo nano tls/cf-origin-key.pem   # вставить Private Key
-sudo chown zenith-panel:zenith-panel tls/cf-origin.pem tls/cf-origin-key.pem
-sudo chmod 600 tls/cf-origin-key.pem
-
-# 3. Дефолтные пути (panel/config.py) уже указывают сюда -- явно
-#    прописывать PANEL_TLS_CERT/PANEL_TLS_KEY в .env не обязательно, если
-#    файлы лежат ровно как в п.2. В Zenith/.env остаётся выставить только
-#    порт (PANEL_PORT теперь = сам этот альт-порт Cloudflare, не
-#    внутренний 8766 -- панель слушает его напрямую, TLS уже внутри):
-PANEL_PORT=<порт из списка выше, напр. 2087>
-
-sudo systemctl restart zenith-panel
-sudo systemctl status zenith-panel --no-pager
-
-# 4. Порт снаружи должен светить ТОЛЬКО Cloudflare, не всему интернету --
-#    panel/cloudflare_iptables.sh ставит ipset+iptables allowlist по
-#    официальным диапазонам Cloudflare (обновляется по крону, диапазоны
-#    изредка меняются):
-sudo apt-get install -y ipset
-sudo /opt/z2r_autobench/Zenith/panel/cloudflare_iptables.sh <порт>
-# в cron, раз в сутки:
-echo "0 4 * * * root /opt/z2r_autobench/Zenith/panel/cloudflare_iptables.sh <порт> >> /var/log/cf-iptables.log 2>&1" | sudo tee /etc/cron.d/cf-iptables
-```
-
-Панель после этого слушает `0.0.0.0:<порт>` НАПРЯМУЮ (см. `main.py` --
-как только заданы `PANEL_TLS_CERT`/`PANEL_TLS_KEY`, `PANEL_HOST`
-игнорируется, это уже не loopback-режим). Порт >1024 -- отдельных
-capabilities/root для биндинга не нужно, `zenith-panel` как был
-непривилегированным, так и остаётся. Сессионная cookie ставится с флагом
-`Secure` (`PANEL_COOKIE_HTTPS_ONLY=true`, дефолт), т.к. до браузера теперь
-всегда доходит по HTTPS.
+group-by этого уровня по всем профилям/провайдерам разом, с колонкой
+"сколько разных провайдеров" -- чем больше, тем более общий,
+не-провайдер-специфичный приём. Копится сама по себе по мере того, как
+ноды синкаются -- ручного курирования не требует.
 
 ## Статус: работает v1, с упрощениями
 
@@ -373,10 +266,11 @@ capabilities/root для биндинга не нужно, `zenith-panel` как
   геномов подряд провалились на одном домене → пауза + `ban_events`,
   а не "стратегия не работает"). Плюс `sync_client.py`/`bootstrap.py` —
   синк с панелью и первый запуск на новой ноде (см. ниже).
-- `panel/` — веб-панель (FastAPI): обзор по профилям/нодам, история
-  мутаций конкретного генома, read-only статус боевых стратегий, база
-  знаний по семействам, и sync-хаб (push/pull/bootstrap API для
-  удалённых нод) — см. "Веб-панель и мульти-провайдерный sync" ниже.
+- [scp-oss/z0r-panel](https://github.com/scp-oss/z0r-panel) — веб-панель
+  (отдельный репозиторий): обзор по профилям/нодам, история мутаций
+  конкретного генома, read-only статус боевых стратегий, база знаний по
+  семействам, и sync-хаб (push/pull/bootstrap API для удалённых нод) —
+  см. "Веб-панель и мульти-провайдерный sync" ниже.
 
 **Упрощения v1** (см. `orchestrator/main.py` docstring):
 - `crossover()` в `mutate.py` есть, но в основной цикл ещё не подключена.
@@ -431,12 +325,14 @@ sudo venv/bin/python3 promote.py --profile YT_TLS --after-strategy 42
    (нет exec-доступа к боевому серверу).
 6. ~~Когда появятся ВМ ростелеком/МТС — вынести MySQL за localhost, общая
    БД на несколько площадок разом~~ — сделано иначе и безопаснее:
-   `panel/` + hub-and-spoke sync по HTTP с токеном на ноду, а не общая
-   MySQL наружу (см. раздел "Веб-панель и мульти-провайдерный sync").
+   [z0r-panel](https://github.com/scp-oss/z0r-panel) + hub-and-spoke sync
+   по HTTP с токеном на ноду, а не общая MySQL наружу (см. раздел
+   "Веб-панель и мульти-провайдерный sync").
 7. ~~VOICE_UDP через Zenith вместо ручного `z2r_test-voice-bot`~~ — готово
    (см. раздел выше). GAMES_UDP/FB_TLS/FB_HTTP всё ещё не начаты.
 8. ~~Веб-панель: обзор по нодам/провайдерам, история мутаций, bootstrap
-   для новых нод, база знаний по семействам~~ — готово, `panel/`.
+   для новых нод, база знаний по семействам~~ — готово,
+   [z0r-panel](https://github.com/scp-oss/z0r-panel) (отдельный репо).
 
 ## Требования
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Синк удалённой ноды с панелью на боевом сервере (см. panel/README.md
+"""Синк удалённой ноды с панелью на боевом сервере (см. z0r-panel/README.md
 и CLAUDE.md/README про hub-and-spoke). Прямого доступа к MySQL панели у
 удалённых нод нет -- только этот HTTP-клиент (panel_client.py) с
 токеном ноды.

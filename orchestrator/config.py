@@ -27,7 +27,7 @@ MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", _ENV.get("MYSQL_DATABASE", "z2
 SANDBOX_USER = os.environ.get("SANDBOX_USER", "zenith-sandbox")
 
 # Для sync_client.py (удалённые ноды -> панель на боевом сервере, см.
-# panel/README.md). Пусто на самой панели/локальной ноде -- sync_client.py
+# z0r-panel/README.md). Пусто на самой панели/локальной ноде -- sync_client.py
 # там не нужен, панель и так пишет в эту же БД напрямую.
 PANEL_URL = os.environ.get("PANEL_URL", _ENV.get("PANEL_URL", ""))
 PANEL_NODE_TOKEN = os.environ.get("PANEL_NODE_TOKEN", _ENV.get("PANEL_NODE_TOKEN", ""))

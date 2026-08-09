@@ -1,4 +1,4 @@
-"""HTTP-клиент к panel/sync_api.py для удалённых нод (см.
+"""HTTP-клиент к z0r-panel/sync_api.py для удалённых нод (см.
 config.PANEL_URL/PANEL_NODE_TOKEN). stdlib-only (urllib), как
 voice_tester.py -- orchestrator/requirements.txt намеренно держит только
 mysql-connector-python, лишних зависимостей ради одного HTTP-клиента не

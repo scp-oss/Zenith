@@ -158,7 +158,7 @@ def export_for_sync(conn, environment_id, profile=None):
     """Снапшот genomes+genome_scores этого окружения для sync_client.py
     push -- панель заменяет (не суммирует) значения по этому genome_id,
     так что тут нужен ПОЛНЫЙ текущий снимок, не дельта с прошлого раза
-    (см. panel/db.py::sync_push)."""
+    (см. z0r-panel db.py::sync_push)."""
     cur = conn.cursor(dictionary=True)
     query = """SELECT g.id, g.profile, g.filter_type, g.family, g.fooling, g.ttl_mode,
                       g.fake_payload, g.params_json, g.rendered_args, g.source,
