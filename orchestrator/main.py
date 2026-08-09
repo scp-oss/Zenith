@@ -23,6 +23,7 @@ import random
 import sys
 import time
 
+import config
 import controls
 import db
 import genome as genome_mod
@@ -216,7 +217,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--rounds", type=int, default=20)
-    ap.add_argument("--environment", default="prod-domru", help="имя окружения в таблице environments")
-    ap.add_argument("--provider", default="domru")
+    ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME, help="имя окружения в таблице environments")
+    ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)
     args = ap.parse_args()
     sys.exit(run(args.profile, args.rounds, args.environment, args.provider))

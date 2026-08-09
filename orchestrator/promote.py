@@ -22,6 +22,7 @@ tool silently wastes cycles on the nonexistent numbers").
 import argparse
 import sys
 
+import config
 import db
 
 # Совпадает и с rank_strategies.sh (case TITLE=...), и с
@@ -132,8 +133,8 @@ if __name__ == "__main__":
     ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--genome-id", help="id (или префикс) конкретного генома; иначе автовыбор лучшего")
     ap.add_argument("--after-strategy", type=int, required=True, help="текущий max strategy= для профиля")
-    ap.add_argument("--environment", default="prod-domru")
-    ap.add_argument("--provider", default="domru")
+    ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME)
+    ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)
     ap.add_argument("--min-pulls", type=int, default=5, help="мин. число прогонов для автовыбора (только с 100%% успехом)")
     args = ap.parse_args()
     sys.exit(run(args.profile, args.genome_id, args.after_strategy, args.environment, args.provider, args.min_pulls))

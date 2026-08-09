@@ -26,6 +26,17 @@ MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", _ENV.get("MYSQL_DATABASE", "z2
 
 SANDBOX_USER = os.environ.get("SANDBOX_USER", "zenith-sandbox")
 
+# Дефолт для --environment/--provider во всех CLI-скриптах (main.py,
+# bootstrap.py, sync_client.py, compare_control.py, promote.py) -- раньше
+# был захардкожен буквально как "prod-domru"/"domru" в каждом argparse,
+# так что на ноде другого провайдера ЛЕГКО забыть передать флаги явно --
+# и данные молча запишутся под именем "домру", хотя это уже другая нода.
+# Теперь дефолт читается из .env (той же переменной, что видит панель) --
+# один раз выставил ZENITH_ENVIRONMENT_NAME/PROVIDER на конкретной ноде,
+# дальше можно просто не думать про эти флаги на каждый запуск.
+LOCAL_ENVIRONMENT_NAME = os.environ.get("ZENITH_ENVIRONMENT_NAME", _ENV.get("ZENITH_ENVIRONMENT_NAME", "prod-domru"))
+LOCAL_ENVIRONMENT_PROVIDER = os.environ.get("ZENITH_ENVIRONMENT_PROVIDER", _ENV.get("ZENITH_ENVIRONMENT_PROVIDER", "domru"))
+
 # Для sync_client.py (удалённые ноды -> панель на боевом сервере, см.
 # z0r-panel/README.md). Пусто на самой панели/локальной ноде -- sync_client.py
 # там не нужен, панель и так пишет в эту же БД напрямую.

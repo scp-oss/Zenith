@@ -22,6 +22,7 @@ import argparse
 import sys
 import time
 
+import config
 import controls
 import db
 import genome as genome_mod
@@ -137,7 +138,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--trials", type=int, default=5, help="попыток НА КАЖДЫЙ домен профиля (для VOICE_UDP -- попыток подключения)")
-    ap.add_argument("--environment", default="prod-domru")
-    ap.add_argument("--provider", default="domru")
+    ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME)
+    ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)
     args = ap.parse_args()
     sys.exit(run(args.profile, args.trials, args.environment, args.provider))
