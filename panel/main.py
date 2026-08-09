@@ -33,7 +33,11 @@ if not config.PANEL_SESSION_SECRET:
           "Сгенерируй: python3 -c 'import secrets; print(secrets.token_hex(32))'", file=sys.stderr)
 
 app = FastAPI(title="Zenith panel")
-app.add_middleware(SessionMiddleware, secret_key=config.PANEL_SESSION_SECRET or "dev-insecure-change-me")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.PANEL_SESSION_SECRET or "dev-insecure-change-me",
+    https_only=config.PANEL_COOKIE_HTTPS_ONLY,
+)
 app.add_exception_handler(auth.NotAuthenticated, auth.not_authenticated_handler)
 app.include_router(sync_api.router)
 app.mount("/static", StaticFiles(directory="static"), name="static")

@@ -40,8 +40,19 @@ PANEL_ADMIN_USER = _get("PANEL_ADMIN_USER", "admin")
 PANEL_ADMIN_PASSWORD_HASH = _get("PANEL_ADMIN_PASSWORD_HASH", "")
 PANEL_SESSION_SECRET = _get("PANEL_SESSION_SECRET", "")
 
-PANEL_HOST = _get("PANEL_HOST", "0.0.0.0")
+
+# Дефолт -- 127.0.0.1: панель не смотрит в интернет сама. Публичный вход --
+# Caddy (443 обычно занят на хосте, слушает альт-порт Cloudflare) с
+# Origin CA сертификатом, реверс-прокси на этот же 127.0.0.1:PANEL_PORT
+# (см. README "Публикация панели через Cloudflare"). Меняй на 0.0.0.0
+# только если сознательно НЕ используешь Caddy/reverse proxy перед ней --
+# тогда логин будет идти голым HTTP, см. предупреждение в README.
+PANEL_HOST = _get("PANEL_HOST", "127.0.0.1")
 PANEL_PORT = int(_get("PANEL_PORT", "8766"))
+# Secure-флаг на сессионной cookie -- отключай только для локальной
+# разработки без TLS (иначе браузер попросту не отдаст cookie обратно по
+# http и логин будет молча "не держаться").
+PANEL_COOKIE_HTTPS_ONLY = _get("PANEL_COOKIE_HTTPS_ONLY", "true").lower() == "true"
 
 # Локальное окружение -- то, за которое панель показывает control-статус
 # через set_strategy_cli.sh (только `get`/`max`, никогда `set` -- панель

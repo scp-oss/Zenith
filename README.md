@@ -285,6 +285,64 @@ PANEL_URL=http://<адрес-панели>:8766
 PANEL_NODE_TOKEN=<токен>
 ```
 
+### Публикация панели через Cloudflare (Caddy + Origin CA, без Let's Encrypt)
+
+443 на хосте обычно уже занят чем-то другим -- используем один из
+альтернативных HTTPS-портов, которые Cloudflare вообще проксирует на
+orange-cloud записях: **443, 2053, 2083, 2087, 2096, 8443** (и только
+их -- на любой другой порт проксируемый трафик Cloudflare не дойдёт, это
+жёсткое ограничение на стороне Cloudflare, не завязано на блокировки
+провайдера). Let's Encrypt тут не подходит по той же причине, что и порт
+443 -- HTTP-01/TLS-ALPN-01 челленджам тоже нужны 80/443. Вместо этого --
+**Cloudflare Origin CA**: сертификат на 15 лет, выпускается вручную в
+дашборде Cloudflare без единого челленджа, доверен только самим
+Cloudflare (это и требуется -- напрямую по IP, минуя Cloudflare, панель
+трогать не должны).
+
+```bash
+# 1. В дашборде Cloudflare для зоны домена:
+#    DNS -> Add record -> A, имя PANEL_HOSTNAME, значение = публичный IP
+#    сервера, Proxy status: Proxied (оранжевое облако).
+#    SSL/TLS -> Overview -> Encryption mode: Full (strict).
+#    SSL/TLS -> Origin Server -> Create Certificate -> RSA, hostnames =
+#    PANEL_HOSTNAME, 15 years -> сохрани Origin Certificate и Private Key
+#    (private key больше нигде не показывается повторно).
+
+# 2. На сервере -- вставь скопированные из дашборда PEM'ы (набери команду
+#    сам, не вставляй приватный ключ в чат/куда-либо ещё):
+sudo mkdir -p /etc/caddy
+sudo nano /etc/caddy/cf-origin.pem       # вставить Origin Certificate
+sudo nano /etc/caddy/cf-origin-key.pem   # вставить Private Key
+sudo chmod 600 /etc/caddy/cf-origin-key.pem
+
+# 3. Caddy (официальный репозиторий, не из дефолтного apt):
+sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt-get update && sudo apt-get install -y caddy
+
+# 4. Caddyfile -- см. panel/Caddyfile.example, подставь PANEL_HOSTNAME и
+#    PANEL_PUBLIC_PORT (один из шести портов выше):
+sudo cp /opt/z2r_autobench/Zenith/panel/Caddyfile.example /etc/caddy/Caddyfile
+sudo sed -i 's/PANEL_HOSTNAME/<твой хост, напр. panel.example.com>/; s/PANEL_PUBLIC_PORT/<порт>/' /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+
+# 5. Порт снаружи должен светить ТОЛЬКО Cloudflare, не всему интернету --
+#    panel/cloudflare_iptables.sh ставит ipset+iptables allowlist по
+#    официальным диапазонам Cloudflare (обновляется по крону, диапазоны
+#    изредка меняются):
+sudo apt-get install -y ipset
+sudo /opt/z2r_autobench/Zenith/panel/cloudflare_iptables.sh <порт>
+# в cron, раз в сутки:
+echo "0 4 * * * root /opt/z2r_autobench/Zenith/panel/cloudflare_iptables.sh <порт> >> /var/log/cf-iptables.log 2>&1" | sudo tee /etc/cron.d/cf-iptables
+```
+
+Панель сама после этого держится строго на `127.0.0.1:8766` (см.
+`PANEL_HOST` в `.env` -- дефолт уже `127.0.0.1`, менять не нужно) --
+единственная точка входа снаружи -- Caddy. Сессионная cookie ставится с
+флагом `Secure` (`PANEL_COOKIE_HTTPS_ONLY=true`, дефолт), т.к. до браузера
+теперь всегда доходит по HTTPS через Caddy.
+
 ## Статус: работает v1, с упрощениями
 
 - `db/schema.sql` — схема MySQL, теперь с `genomes.profile` (отдельный
