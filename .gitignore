@@ -10,3 +10,8 @@ sandbox/queue_num
 sandbox/nfqws2_sandbox.conf
 sandbox/nfqws2_sandbox.pid
 sandbox/nfqws2_sandbox.debug.log
+
+# TLS-сертификат/ключ панели (Cloudflare Origin CA) -- живут тут на
+# конкретном сервере, никогда не коммитятся, см. README "Публикация
+# панели через Cloudflare"
+panel/tls/

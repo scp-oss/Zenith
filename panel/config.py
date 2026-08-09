@@ -52,8 +52,19 @@ PANEL_SESSION_SECRET = _get("PANEL_SESSION_SECRET", "")
 # альт-порт Cloudflare, напр. 2087). Не заданы -- голый HTTP на
 # PANEL_HOST (дефолт 127.0.0.1) -- для локальной разработки или если
 # TLS-терминацию всё же решили вынести во внешний reverse-proxy.
-PANEL_TLS_CERT = _get("PANEL_TLS_CERT", "")
-PANEL_TLS_KEY = _get("PANEL_TLS_KEY", "")
+#
+# Дефолт пути -- ВНУТРИ репозитория (panel/tls/), не /etc/куда-то -- по
+# прямому запросу не разбрасывать файлы по системе. panel/tls/ в
+# .gitignore -- сами PEM'ы никогда не коммитятся, только эта директория
+# как место для них на конкретном сервере. Дефолт применяется, только
+# если файл там реально есть -- иначе (TLS ещё не настроен) откатываемся
+# к HTTP-режиму, а не падаем на открытии несуществующего файла в
+# uvicorn.run().
+PANEL_TLS_DIR = os.path.join(PANEL_DIR, "tls")
+_default_cert = os.path.join(PANEL_TLS_DIR, "cf-origin.pem")
+_default_key = os.path.join(PANEL_TLS_DIR, "cf-origin-key.pem")
+PANEL_TLS_CERT = _get("PANEL_TLS_CERT", _default_cert if os.path.exists(_default_cert) else "")
+PANEL_TLS_KEY = _get("PANEL_TLS_KEY", _default_key if os.path.exists(_default_key) else "")
 PANEL_HOST = _get("PANEL_HOST", "127.0.0.1")
 PANEL_PORT = int(_get("PANEL_PORT", "8766"))
 # Secure-флаг на сессионной cookie -- отключай только для локальной

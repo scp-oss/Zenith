@@ -319,19 +319,23 @@ Cloudflare (это и требуется -- напрямую, минуя Cloudfl
 #    страницу Cloudflare).
 
 # 2. На сервере -- вставь скопированные из дашборда PEM'ы (набери команду
-#    сам, не вставляй приватный ключ в чат/куда-либо ещё). Владелец --
-#    юзер, от которого работает панель (zenith-panel, см. "Установка
-#    панели" выше), не root -- панели самой нужно их читать при старте:
-sudo mkdir -p /etc/zenith-panel
-sudo nano /etc/zenith-panel/cf-origin.pem       # вставить Origin Certificate
-sudo nano /etc/zenith-panel/cf-origin-key.pem   # вставить Private Key
-sudo chown zenith-panel:zenith-panel /etc/zenith-panel/cf-origin.pem /etc/zenith-panel/cf-origin-key.pem
-sudo chmod 600 /etc/zenith-panel/cf-origin-key.pem
+#    сам, не вставляй приватный ключ в чат/куда-либо ещё). Живут ВНУТРИ
+#    репозитория (panel/tls/, в .gitignore -- никогда не коммитятся), не
+#    раскиданы по /etc. Владелец -- юзер, от которого работает панель
+#    (zenith-panel, см. "Установка панели" выше), не root -- панели самой
+#    нужно их читать при старте:
+cd /opt/z2r_autobench/Zenith/panel
+mkdir -p tls
+sudo nano tls/cf-origin.pem       # вставить Origin Certificate
+sudo nano tls/cf-origin-key.pem   # вставить Private Key
+sudo chown zenith-panel:zenith-panel tls/cf-origin.pem tls/cf-origin-key.pem
+sudo chmod 600 tls/cf-origin-key.pem
 
-# 3. В Zenith/.env (PANEL_PORT теперь = сам этот альт-порт Cloudflare,
-#    не внутренний 8766 -- панель слушает его напрямую, TLS уже внутри):
-PANEL_TLS_CERT=/etc/zenith-panel/cf-origin.pem
-PANEL_TLS_KEY=/etc/zenith-panel/cf-origin-key.pem
+# 3. Дефолтные пути (panel/config.py) уже указывают сюда -- явно
+#    прописывать PANEL_TLS_CERT/PANEL_TLS_KEY в .env не обязательно, если
+#    файлы лежат ровно как в п.2. В Zenith/.env остаётся выставить только
+#    порт (PANEL_PORT теперь = сам этот альт-порт Cloudflare, не
+#    внутренний 8766 -- панель слушает его напрямую, TLS уже внутри):
 PANEL_PORT=<порт из списка выше, напр. 2087>
 
 sudo systemctl restart zenith-panel
