@@ -27,6 +27,13 @@ ZENITH_DIR="$(dirname "$SCRIPT_DIR")"
 # MySQL-совместимое имя юзера -- только [a-zA-Z0-9_], обрезано до 32 символов
 DB_USER="zr_$(echo "$NODE_NAME" | tr -c 'a-zA-Z0-9_' '_' | cut -c1-28)"
 PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+# Свой UUID и для режима 3, тем же смыслом, что node_uuid у HTTP-токенов
+# (см. panel/db.py::create_node) -- "один юзер/токен = один сервер",
+# нужно чтобы несколько нод ОДНОГО провайдера в разных географических
+# точках не путались между собой (name у каждой всё равно должен быть
+# уникальным, но UUID -- дополнительная стабильная привязка, не зависящая
+# от того, что оператор вписал в имя).
+NODE_UUID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 
 if [ ! -f "$ZENITH_DIR/.env" ]; then
     echo "Не найден $ZENITH_DIR/.env -- запускай из установленного Zenith." >&2
@@ -37,6 +44,9 @@ MYSQL_DATABASE="$(grep -E '^MYSQL_DATABASE=' "$ZENITH_DIR/.env" | tail -1 | cut 
 MYSQL_DATABASE="${MYSQL_DATABASE:-z2r_genome}"
 
 SQL="
+INSERT INTO ${MYSQL_DATABASE}.environments (name, provider, node_uuid)
+  VALUES ('${NODE_NAME}', '${NODE_PROVIDER}', '${NODE_UUID}')
+  ON DUPLICATE KEY UPDATE provider=VALUES(provider), node_uuid=VALUES(node_uuid);
 CREATE USER IF NOT EXISTS '${DB_USER}'@'${NODE_IP}' IDENTIFIED BY '${PASSWORD}';
 ALTER USER '${DB_USER}'@'${NODE_IP}' IDENTIFIED BY '${PASSWORD}';
 GRANT SELECT, INSERT, UPDATE ON ${MYSQL_DATABASE}.environments TO '${DB_USER}'@'${NODE_IP}';
@@ -59,7 +69,9 @@ PUBLIC_HOST="$(curl -fsSL --max-time 3 https://ifconfig.me 2>/dev/null || true)"
 PUBLIC_HOST="${PUBLIC_HOST:-<публичный IP или домен этого сервера>}"
 
 echo ""
-echo "Готово для ноды \"$NODE_NAME\"."
+echo "Готово для ноды \"$NODE_NAME\" (провайдер: $NODE_PROVIDER, UUID: $NODE_UUID)."
+echo "Запись в environments создана централизованно -- появится в /nodes на"
+echo "панели сразу, не дожидаясь первого запуска main.py на самой ноде."
 echo ""
 if [ "$PUBLIC_HOST" != "<публичный IP или домен этого сервера>" ]; then
   CONNECT_STRING="$(python3 - "$PUBLIC_HOST" "$MYSQL_DATABASE" "$DB_USER" "$PASSWORD" "$NODE_NAME" "$NODE_PROVIDER" <<'PYEOF'
