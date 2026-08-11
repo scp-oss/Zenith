@@ -59,9 +59,30 @@ PUBLIC_HOST="$(curl -fsSL --max-time 3 https://ifconfig.me 2>/dev/null || true)"
 PUBLIC_HOST="${PUBLIC_HOST:-<публичный IP или домен этого сервера>}"
 
 echo ""
-echo "Готово для ноды \"$NODE_NAME\" (node_uuid тут не нужен -- это MySQL-юзер,"
-echo "не HTTP-токен панели). На самой ноде -- z0r пункт 22, режим БД 3, вставь"
-echo "блок ЦЕЛИКОМ (флеш-лефт, ниже маркеров, без изменений):"
+echo "Готово для ноды \"$NODE_NAME\"."
+echo ""
+if [ "$PUBLIC_HOST" != "<публичный IP или домен этого сервера>" ]; then
+  CONNECT_STRING="$(python3 - "$PUBLIC_HOST" "$MYSQL_DATABASE" "$DB_USER" "$PASSWORD" "$NODE_NAME" "$NODE_PROVIDER" <<'PYEOF'
+import base64, json, sys
+
+host, db, user, password, name, provider = sys.argv[1:7]
+payload = {
+    "m": "db", "host": host, "port": 3306, "db": db,
+    "user": user, "pass": password, "name": name, "provider": provider,
+}
+raw = json.dumps(payload, separators=(",", ":")).encode()
+print(base64.urlsafe_b64encode(raw).decode().rstrip("="))
+PYEOF
+)"
+  echo "Строка-конфиг -- вставь ЦЕЛИКОМ на ноде (z0r, пункт 22, режим БД 3,"
+  echo "первый вопрос \"Строка-конфиг\"):"
+  echo ""
+  echo "  $CONNECT_STRING"
+  echo ""
+fi
+echo "Те же данные по отдельности (если строка-конфиг выше не подходит по"
+echo "какой-то причине, или MYSQL_HOST не определился автоматически --"
+echo "вставь этот блок ЦЕЛИКОМ, флеш-лефт, ниже маркеров):"
 echo "--- (копировать отсюда) ---"
 echo "MYSQL_HOST=${PUBLIC_HOST}"
 echo "MYSQL_PORT=3306"
@@ -72,8 +93,6 @@ echo "ZENITH_ENVIRONMENT_NAME=${NODE_NAME}"
 echo "ZENITH_ENVIRONMENT_PROVIDER=${NODE_PROVIDER}"
 echo "--- (докопировать досюда) ---"
 echo ""
-echo "Пароль показан ОДИН раз, сохрани сейчас. Если MYSQL_HOST выше не"
-echo "определился (плейсхолдер в угловых скобках) -- впиши публичный IP/домен"
-echo "этого сервера сам перед вставкой на ноде. Не забудь также:"
+echo "Пароль показан ОДИН раз, сохрани сейчас. Не забудь также:"
 echo "  1. MYSQL_BIND_HOST=0.0.0.0 в $ZENITH_DIR/.env + docker compose up -d (если ещё не сделано)"
 echo "  2. sudo $SCRIPT_DIR/mysql_node_allowlist.sh add $NODE_IP"
