@@ -70,3 +70,90 @@ def bootstrap(profile: str, environment_name: str, provider: str, min_pulls: int
         "GET", "/api/v1/sync/bootstrap", params={"profile": profile, "min_pulls": min_pulls, "limit": limit},
         node_name=environment_name, node_provider=provider,
     )
+
+
+# ------------------------------------------------------- realtime DB API --
+# Для ZENITH_DB_MODE=api (см. db_api.py) -- по одному запросу на каждый
+# вызов orchestrator/db.py, а не снапшотом пачкой, как push/pull выше.
+# Зеркалирует z0r-panel/db_api.py 1:1.
+
+def get_environment(environment_name: str, provider: str) -> dict:
+    return _request("GET", "/api/v1/db/environment", node_name=environment_name, node_provider=provider)
+
+
+def get_domains(profile: str, environment_name: str, provider: str) -> dict:
+    return _request(
+        "GET", "/api/v1/db/domains", params={"profile": profile},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def insert_genome(genome_body: dict, environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/genomes", body=genome_body,
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def insert_control_genome(profile: str, lines: list, environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/control_genomes", body={"profile": profile, "lines": lines},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def record_experiment(genome_id: str, domain_id: int, success: bool, bytes_: int, latency_ms,
+                       ban_suspected: bool, environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/experiments",
+        body={
+            "genome_id": genome_id, "domain_id": domain_id, "success": success,
+            "bytes_": bytes_, "latency_ms": latency_ms, "ban_suspected": ban_suspected,
+        },
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def upsert_genome_score(genome_id: str, success: bool, reward: float, environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/genome_scores",
+        body={"genome_id": genome_id, "success": success, "reward": reward},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def get_genome_scores(profile: str, environment_name: str, provider: str) -> dict:
+    return _request(
+        "GET", "/api/v1/db/genome_scores", params={"profile": profile},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def upsert_operator_stat(filter_type: str, operator: str, reward: float, environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/operator_stats",
+        body={"filter_type": filter_type, "operator": operator, "reward": reward},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def get_operator_stats(filter_type: str, environment_name: str, provider: str) -> dict:
+    return _request(
+        "GET", "/api/v1/db/operator_stats", params={"filter_type": filter_type},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def recent_domain_experiments(domain_id: int, limit: int, environment_name: str, provider: str) -> dict:
+    return _request(
+        "GET", "/api/v1/db/domain_experiments", params={"domain_id": domain_id, "limit": limit},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
+def log_ban_event(domain_id: int, reason: str, cooldown_seconds: int, environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/ban_events",
+        body={"domain_id": domain_id, "reason": reason, "cooldown_seconds": cooldown_seconds},
+        node_name=environment_name, node_provider=provider,
+    )

@@ -18,6 +18,14 @@ ZENITH_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SANDBOX_DIR = os.path.join(ZENITH_DIR, "sandbox")
 _ENV = _load_env(os.path.join(ZENITH_DIR, ".env"))
 
+# docker (локальная БД, своя или буфер для hub-and-spoke) | api (своей БД
+# нет вообще, каждый вызов db.py -- HTTP-запрос к панели, см. db.py/
+# db_api.py). Раньше третьим значением было "external" (прямое MySQL-
+# соединение к центральному серверу без своей БД) -- убрано, сырой MySQL
+# наружу больше не открывается ни для одной ноды, см. Zenith README "Два
+# режима БД" и z0r-panel db/schema.sql.
+ZENITH_DB_MODE = os.environ.get("ZENITH_DB_MODE", _ENV.get("ZENITH_DB_MODE", "docker"))
+
 MYSQL_HOST = os.environ.get("MYSQL_HOST", _ENV.get("MYSQL_HOST", "127.0.0.1"))
 MYSQL_PORT = int(os.environ.get("MYSQL_PORT", _ENV.get("MYSQL_PORT", "3306")))
 MYSQL_USER = os.environ.get("MYSQL_USER", _ENV.get("MYSQL_USER", "zenith"))
