@@ -29,6 +29,14 @@ def _request(method: str, path: str, params: dict = None, body: dict = None,
     headers = {
         "Authorization": f"Bearer {config.PANEL_NODE_TOKEN}",
         "Content-Type": "application/json",
+        # Дефолтный User-Agent urllib ("Python-urllib/3.x") -- первый
+        # кандидат под Cloudflare Bot Fight Mode/WAF-эвристиками (живой
+        # инцидент: 403 "error code: 1010" на /api/v1/db/*, хотя тот же
+        # путь curl'ом проходил). Сигнатуру не подделываем под браузер --
+        # честно называемся, реальный фикс от 1010 -- Cloudflare-правило
+        # "Skip Bot Fight Mode" для /api/v1/*, не эта строка сама по себе,
+        # но менять дефолт всё равно стоит.
+        "User-Agent": "zenith-orchestrator/1.0",
     }
     # Self-report -- панель обновляет имя/провайдера этой записи этими
     # значениями на КАЖДЫЙ запрос (см. panel auth.require_node), не
