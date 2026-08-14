@@ -129,6 +129,11 @@ CREATE TABLE genome_scores (
     successes       INT NOT NULL DEFAULT 0,
     total_reward    DOUBLE NOT NULL DEFAULT 0,      -- сумма score, для среднего
     is_production   BOOLEAN NOT NULL DEFAULT FALSE, -- сейчас закреплён как боевой в этом окружении
+    promoted_strategy INT NULL,                     -- номер strategy=N в /opt/zapret2/config этого окружения,
+                                                      -- если человек продвинул геном туда (см. orchestrator/
+                                                      -- promote.py -- сам скрипт это НЕ пишет, только печатает
+                                                      -- инструкцию; колонку заполняет панель по явному действию
+                                                      -- человека, см. db/migrations/003_promoted_strategy.sql)
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (genome_id, environment_id)
 );
