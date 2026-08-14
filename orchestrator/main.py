@@ -39,6 +39,10 @@ CHECK_COOLDOWN_ROUNDS = 8  # не дёргать control чаще раза в с
 BAN_COOLDOWN_SECONDS = 1800
 BASE_SETTLE_SECONDS = 3
 MAX_SETTLE_SECONDS = 60
+# Тот же порог, что MIN_BYTES_THRESHOLD в z2r_autobench_lib.sh (см. CLAUDE.md
+# z2r_autobench "Test domains") -- домен, отдающий меньше, портит любой тест
+# ложным провалом вне зависимости от реального DPI-обхода.
+MIN_BYTES_THRESHOLD = 65536
 
 
 def pick_operator_ucb(op_stats: dict, total_pulls: int) -> str:
@@ -127,12 +131,21 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
     return success
 
 
-def run(profile: str, rounds: int, environment_name: str, provider: str) -> int:
+def run(profile: str, rounds: int, environment_name: str, provider: str, domain_override: str = None) -> int:
     conn = db.connect()
     env_id = db.get_or_create_environment(conn, environment_name, provider)
     filter_type = genome_mod.PROFILE_FILTER_TYPE.get(profile, "tcp/443")
 
-    domains = db.get_domains_for_profile(conn, profile)
+    if domain_override:
+        # Разовый кастомный домен (--domain, обычно из панели -- "запустить
+        # подбор для кастомного домена") -- не выбираем случайно из пула,
+        # весь прогон идёт против ЭТОГО домена. get_or_create_domain сам
+        # заводит запись в domain_pool, если её ещё не было -- дальше это
+        # обычная запись пула, попадёт и в будущие get_domains_for_profile.
+        host, _, path = domain_override.partition("/")
+        domains = [db.get_or_create_domain(conn, host, "/" + path if path else "/", profile, MIN_BYTES_THRESHOLD)]
+    else:
+        domains = db.get_domains_for_profile(conn, profile)
     if not domains:
         print(f"Нет доменов в domain_pool для профиля {profile} (или все в карантине).", file=sys.stderr)
         return 1
@@ -219,5 +232,6 @@ if __name__ == "__main__":
     ap.add_argument("--rounds", type=int, default=20)
     ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME, help="имя окружения в таблице environments")
     ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)
+    ap.add_argument("--domain", default=None, help="кастомный домен (host[/path]) вместо случайного из domain_pool -- весь прогон идёт против него одного")
     args = ap.parse_args()
-    sys.exit(run(args.profile, args.rounds, args.environment, args.provider))
+    sys.exit(run(args.profile, args.rounds, args.environment, args.provider, args.domain))

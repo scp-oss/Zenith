@@ -14,6 +14,7 @@ else:
 connect = _impl.connect
 get_or_create_environment = _impl.get_or_create_environment
 get_domains_for_profile = _impl.get_domains_for_profile
+get_or_create_domain = _impl.get_or_create_domain
 insert_control_genome = _impl.insert_control_genome
 insert_genome = _impl.insert_genome
 record_experiment = _impl.record_experiment

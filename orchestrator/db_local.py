@@ -46,6 +46,22 @@ def get_domains_for_profile(conn, profile: str):
     return cur.fetchall()
 
 
+def get_or_create_domain(conn, host: str, path: str, profile: str, min_bytes: int) -> dict:
+    """Для main.py --domain -- разовый кастомный домен, не обязательно уже
+    сидящий в domain_pool. UNIQUE KEY (host, path) в схеме -- ON DUPLICATE
+    просто оставляет запись как есть (не перетирает profile_hint/min_bytes
+    у уже существующей ручной записи чужого профиля тем же host/path)."""
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO domain_pool (host, path, profile_hint, min_bytes)
+           VALUES (%s,%s,%s,%s)
+           ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)""",
+        (host, path, profile, min_bytes),
+    )
+    domain_id = cur.lastrowid
+    return {"id": domain_id, "host": host, "path": path, "min_bytes": min_bytes}
+
+
 def insert_control_genome(conn, profile: str, lines: list) -> str:
     """Control-геном (боевая ручная стратегия, см. controls.py) как
     отдельная запись в genomes: family='control', source='manual' --

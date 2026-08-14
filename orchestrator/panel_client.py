@@ -96,6 +96,15 @@ def get_domains(profile: str, environment_name: str, provider: str) -> dict:
     )
 
 
+def get_or_create_domain(host: str, path: str, profile: str, min_bytes: int,
+                          environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/domain",
+        body={"host": host, "path": path, "profile": profile, "min_bytes": min_bytes},
+        node_name=environment_name, node_provider=provider,
+    )
+
+
 def insert_genome(genome_body: dict, environment_name: str, provider: str) -> dict:
     return _request(
         "POST", "/api/v1/db/genomes", body=genome_body,

@@ -47,6 +47,10 @@ def get_domains_for_profile(conn, profile: str):
     return result["domains"]
 
 
+def get_or_create_domain(conn, host: str, path: str, profile: str, min_bytes: int) -> dict:
+    return panel_client.get_or_create_domain(host, path, profile, min_bytes, conn.node_name, conn.node_provider)
+
+
 def insert_control_genome(conn, profile: str, lines: list) -> str:
     result = panel_client.insert_control_genome(profile, lines, conn.node_name, conn.node_provider)
     return result["id"]
