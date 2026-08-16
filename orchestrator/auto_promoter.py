@@ -24,7 +24,14 @@ systemd-юнитом zenith-promoter.service, который запускает 
      не по позиции; backup ПЕРЕД каждой записью, ОТКАЗ при расхождении
      ожидаемого/реального max).
   3. Переключение -- set_strategy_cli.sh set, затем restart zapret2.
-  4. Проверка -- zapret2 реально running, get подтверждает новый номер.
+  4. Проверка -- zapret2 реально running, get подтверждает новый номер,
+     И (кроме VOICE_UDP) РЕАЛЬНЫЙ curl по доменам профиля из domain_pool
+     -- живой инцидент 2026-08-16: geном YT_TLS прошёл sandbox 6/6
+     (avg_score=0.965), но полностью не работал в проде (timeout на
+     www.youtube.com) -- systemctl is-active/get этого НЕ ловят, нужен
+     именно живой HTTP-запрос. tester.py::probe() тут не годится -- та
+     тестирует ТОЛЬКО zenith-sandbox юзера через отдельный iptables-скоуп,
+     не то, что видят обычные пользователи через боевой zapret2.
   5. Не подтвердилось -- promote_apply_cli.sh restore (откат конфига из
      backup) + возврат старой стратегии + restart. Прод никогда не
      остаётся в непроверенном состоянии без отката.
@@ -126,6 +133,48 @@ def _zapret2_running() -> bool:
     return out.returncode == 0 and "SubState=running" in out.stdout
 
 
+def _probe_real(host: str, path: str, min_bytes: int, timeout: int = 8) -> tuple:
+    """curl БЕЗ sudo -u <sandbox-юзер> -- обычный процесс, обычный
+    маршрут через боевой zapret2, то же самое, что видит любой реальный
+    пользователь этого сервера (в отличие от tester.py::probe(), см. её
+    докстринг -- та нарочно СКОУПЛЕНА на zenith-sandbox отдельным
+    iptables-правилом)."""
+    url = f"https://{host}{path or '/'}"
+    try:
+        out = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{size_download}",
+             "--connect-timeout", "5", "--max-time", str(timeout), url],
+            capture_output=True, text=True, timeout=timeout + 3,
+        )
+        bytes_ = int((out.stdout or "0").strip() or 0)
+    except Exception:
+        bytes_ = 0
+    return bytes_ >= min_bytes, bytes_
+
+
+def _real_traffic_check(conn, profile: str) -> tuple:
+    """Живая проверка ПОСЛЕ restart+set, по всем доменам профиля из
+    domain_pool -- ровно то, что promote.py уже давно печатает человеку
+    в чеклисте ("После переключения — проверить живым трафиком... на
+    КАЖДОМ домене профиля"), просто теперь исполняется, а не только
+    напоминается. VOICE_UDP пропускается -- нет HTTP-домена для curl
+    (см. domain_pool 'discord-voice-test' placeholder, min_bytes=0),
+    честного эквивалента живой Discord-проверки без второго похода в
+    z2r_test-voice-bot тут нет -- эта проверка для VOICE_UDP остаётся
+    слабее (только is-active/get), знать об этом ограничении важно
+    оператору, не прятать его молча."""
+    if profile == "VOICE_UDP":
+        return True, "VOICE_UDP -- живая HTTP-проверка недоступна, пропуск (см. докстринг)"
+    domains = db.get_domains_for_profile(conn, profile)
+    if not domains:
+        return True, "нет доменов в domain_pool для этого профиля -- нечем проверить, пропуск"
+    for d in domains:
+        ok, bytes_ = _probe_real(d["host"], d["path"], d["min_bytes"])
+        if not ok:
+            return False, f"{d['host']}{d['path']}: {bytes_} байт (нужно {d['min_bytes']}+)"
+    return True, f"{len(domains)} домен(ов) прошли живую проверку"
+
+
 def _pick_promotable(conn, profile: str, environment_id: int, min_pulls: int):
     """pick_best() берёт ЛУЧШИЙ по avg_score среди подходящих -- если этот
     геном уже продвинут, надо не пропускать профиль целиком (вдруг есть
@@ -212,10 +261,15 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
         if not _zapret2_running() or _get_strategy(num, proto) != strategy_n:
             return _rollback(profile, num, proto, backup_path, old_locked)
 
+        traffic_ok, traffic_detail = _real_traffic_check(conn, profile)
+        if not traffic_ok:
+            rollback_msg = _rollback(profile, num, proto, backup_path, old_locked)
+            return f"{rollback_msg} Причина: живая проверка не прошла -- {traffic_detail}."
+
         _mark_promoted(conn, candidate["id"], env_id, int(strategy_n))
         return (
             f"{profile}: геном {candidate['id'][:12]} продвинут как strategy={strategy_n} "
-            f"(avg_score={candidate['avg_score']}, pulls={candidate['pulls']})."
+            f"(avg_score={candidate['avg_score']}, pulls={candidate['pulls']}, {traffic_detail})."
         )
     finally:
         conn.close()
