@@ -18,10 +18,11 @@ systemd-юнитом zenith-promoter.service, который запускает 
      пропускает уже продвинутые геномы (genome_scores.promoted_strategy
      IS NOT NULL).
   2. Новый strategy=N блок пишется через z2r_autobench/promote_apply_cli.sh
-     (узкий, самопроверяющий скрипт -- см. его докстринг: блок профиля
-     находит СТРОГО по точному совпадению заголовка с genome.PROFILE_FILTERS,
-     не по имени/позиции; backup ПЕРЕД каждой записью, ОТКАЗ при
-     расхождении ожидаемого/реального max).
+     (узкий, самопроверяющий скрипт -- см. её докстринг: блок находит
+     СТРОГО по точному совпадению заголовка ИЛИ по имени общего шаблона
+     (--template=<имя>), см. PROFILE_TARGETS ниже -- не по имени профиля,
+     не по позиции; backup ПЕРЕД каждой записью, ОТКАЗ при расхождении
+     ожидаемого/реального max).
   3. Переключение -- set_strategy_cli.sh set, затем restart zapret2.
   4. Проверка -- zapret2 реально running, get подтверждает новый номер.
   5. Не подтвердилось -- promote_apply_cli.sh restore (откат конфига из
@@ -47,12 +48,55 @@ import time
 
 import config
 import db
-import genome as genome_mod
-from promote import PROFILE_NUMBERS, PROFILE_PROTO, pick_best
+from promote import PROFILE_NUMBERS, PROFILE_PROTO
 
 SETTLE_SECONDS = 3
 SET_STRATEGY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/set_strategy_cli.sh"
 PROMOTE_APPLY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/promote_apply_cli.sh"
+
+# Как найти блок для вставки нового strategy=N -- ДВА разных паттерна в
+# реальном /opt/zapret2/config (см. promote_apply_cli.sh докстринг про
+# HEADER/TEMPLATE), НЕ то же самое, что Zenith'овский genome.py::
+# PROFILE_FILTERS (тот описывает фильтр для ПЕСОЧНИЦЫ -- синтетическому
+# applier'у одного генома circular_locked/--import не нужны вообще, это
+# чисто продовый механизм выбора СРЕДИ НЕСКОЛЬКИХ уже загруженных
+# strategy=). Значения ниже сверены ВЖИВУЮ на конкретном сервере
+# (NETH-4) 2026-08-16 -- см. CLAUDE.md Zenith про то, что конфиги на
+# разных серверах могут расходиться; при расхождении
+# promote_apply_cli.sh откажет БЕЗОПАСНО (не найдёт якорь/блок пуст),
+# не испортит файл -- но само автопродвижение для профиля работать не
+# будет, пока эти значения не перепроверены под конкретный сервер.
+#
+#   ("template", <имя>) -- профиль сам не содержит strategy=N, только
+#     --import=<имя> общий шаблон (--template=<имя> в другом месте
+#     файла) -- ТУДА и нужно писать. Несколько профилей МОГУТ делить
+#     один и тот же шаблон (живой пример: YT_TLS и RKN_TLS оба
+#     --import=z2r_tcp_tls_common) -- это не баг и не риск (кто что
+#     выберет через circular_locked:key=N -- решает set_strategy_cli.sh
+#     set отдельно, добавление нового номера в шаблон само по себе
+#     ничего не переключает).
+#   ("header", [строки]) -- профиль самодостаточен, strategy=N лежат
+#     прямо в его собственном блоке сразу после этих строк заголовка
+#     (точное посимвольное совпадение, по порядку).
+PROFILE_TARGETS = {
+    "YT_TLS": ("template", "z2r_tcp_tls_common"),
+    "RKN_TLS": ("template", "z2r_tcp_tls_common"),
+    "DS_TLS": ("header", [
+        "--filter-tcp=80,443,2053,2083,2087,2096,8443 --hostlist=/opt/zapret2/extra_strats/TCP_Discord.txt",
+        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
+        "--out-range=-s34228",
+        "--in-range=-s32768 --lua-desync=circular_locked:key=4",
+        "--in-range=x",
+        "--payload=tls_client_hello,discord_ip_discovery",
+    ]),
+    "VOICE_UDP": ("header", [
+        "--filter-udp=443,2053,2083,2087,2096,8443,50000-50099,1400,3478-3481,5349,19294-19344",
+        "--filter-l7=discord,stun",
+        "--lua-desync=circular_locked:key=6:proto=udp:allow_nohost=1:exclude_hostlist=/opt/zapret2/lists/netrogat.txt",
+        "--payload=discord_ip_discovery,stun",
+    ]),
+}
 
 
 def _run(cmd: list, timeout: int = 20, input_text: str | None = None) -> subprocess.CompletedProcess:
@@ -131,7 +175,7 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
     решает, печатать её или писать в лог."""
     num = PROFILE_NUMBERS[profile]
     proto = PROFILE_PROTO.get(profile, "tls")
-    header = genome_mod.PROFILE_FILTERS[profile]
+    target_kind, target_value = PROFILE_TARGETS[profile]
 
     conn = db.connect()
     try:
@@ -145,7 +189,11 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
             return f"{profile}: не удалось прочитать текущий max strategy= -- пропуск."
         old_locked = _get_strategy(num, proto)
 
-        spec = "HEADER\n" + "\n".join(header) + "\nBODY\n" + "\n".join(candidate["rendered_args"].split("\n")) + "\n"
+        if target_kind == "template":
+            spec = f"TEMPLATE\n{target_value}\n"
+        else:
+            spec = "HEADER\n" + "\n".join(target_value) + "\n"
+        spec += "BODY\n" + "\n".join(candidate["rendered_args"].split("\n")) + "\n"
         apply_out = _run(
             ["bash", PROMOTE_APPLY_CLI, "apply", current_max, config.ZAPRET2_CONFIG_PATH, config.PROMOTE_BACKUP_DIR],
             input_text=spec,
@@ -183,7 +231,7 @@ def run_loop(profiles: list, environment_name: str, provider: str, min_pulls: in
 
 
 if __name__ == "__main__":
-    runnable = [p for p in PROFILE_NUMBERS if p in genome_mod.PROFILE_FILTERS]
+    runnable = [p for p in PROFILE_NUMBERS if p in PROFILE_TARGETS]
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", choices=runnable, help="один проход по этому профилю (без --loop)")
