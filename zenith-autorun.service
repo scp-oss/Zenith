@@ -1,0 +1,24 @@
+[Unit]
+Description=Zenith periodic candidate generation (orchestrator/main.py on a rotating schedule)
+After=network-online.target
+Wants=network-online.target
+
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/z2r_autobench/Zenith
+ExecStart=/usr/bin/bash /opt/z2r_autobench/Zenith/zenith_autorun.sh
+Restart=on-failure
+RestartSec=30
+User=root
+StandardOutput=journal
+StandardError=journal
+
+# Переопределить настройки можно тут, например:
+# Environment=ZENITH_AUTORUN_INTERVAL_MINUTES=120
+# Environment=ZENITH_AUTORUN_ROUNDS=30
+
+[Install]
+WantedBy=multi-user.target

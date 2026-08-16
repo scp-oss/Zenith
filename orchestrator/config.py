@@ -50,3 +50,12 @@ LOCAL_ENVIRONMENT_PROVIDER = os.environ.get("ZENITH_ENVIRONMENT_PROVIDER", _ENV.
 # там не нужен, панель и так пишет в эту же БД напрямую.
 PANEL_URL = os.environ.get("PANEL_URL", _ENV.get("PANEL_URL", ""))
 PANEL_NODE_TOKEN = os.environ.get("PANEL_NODE_TOKEN", _ENV.get("PANEL_NODE_TOKEN", ""))
+
+# Для auto_promoter.py -- ТОЛЬКО этот скрипт из всего orchestrator/ трогает
+# что-то за пределами БД+песочницы (см. его докстринг), остальным Zenith
+# нет дела до z2r_autobench вообще. Дефолт -- сосед по INSTALL_DIR, см.
+# z2r_autobench/z0r::ZENITH_DIR="$INSTALL_DIR/Zenith" (тот же паттерн, что
+# z0r-panel/config.py::Z2R_AUTOBENCH_DIR).
+Z2R_AUTOBENCH_DIR = os.environ.get("Z2R_AUTOBENCH_DIR", _ENV.get("Z2R_AUTOBENCH_DIR", os.path.dirname(ZENITH_DIR)))
+ZAPRET2_CONFIG_PATH = os.environ.get("ZAPRET2_CONFIG_PATH", _ENV.get("ZAPRET2_CONFIG_PATH", "/opt/zapret2/config"))
+PROMOTE_BACKUP_DIR = os.environ.get("PROMOTE_BACKUP_DIR", _ENV.get("PROMOTE_BACKUP_DIR", "/opt/zapret2/config_backups"))

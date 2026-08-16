@@ -1,0 +1,31 @@
+[Unit]
+Description=Zenith autonomous promotion (auto_promoter.py --loop -- writes /opt/zapret2/config, restarts zapret2, WITHOUT a human)
+After=network-online.target zapret2.service
+Wants=network-online.target
+# Wants=, не Requires= -- та же причина, что в autotune-daemon.service
+# (z2r_autobench): zapret2.service форкает nfqws2 в обход
+# systemd-cgroup и штатно уходит в inactive через пару секунд после
+# старта, Requires= вызывал бы каскадный рестарт этого юнита на каждый
+# `systemctl restart zapret2`.
+Wants=zapret2.service
+
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/z2r_autobench/Zenith/orchestrator
+ExecStart=/opt/z2r_autobench/Zenith/orchestrator/venv/bin/python3 auto_promoter.py --loop
+Restart=on-failure
+RestartSec=30
+User=root
+StandardOutput=journal
+StandardError=journal
+
+# Environment=ZENITH_AUTORUN_INTERVAL_MINUTES=... -- НЕТ, auto_promoter.py
+# берёт интервал из --interval-minutes (аргумент), не из env -- см.
+# ExecStart выше, добавь флаг явно, если нужен не дефолт:
+# ExecStart=/opt/z2r_autobench/Zenith/orchestrator/venv/bin/python3 auto_promoter.py --loop --interval-minutes 120
+
+[Install]
+WantedBy=multi-user.target
