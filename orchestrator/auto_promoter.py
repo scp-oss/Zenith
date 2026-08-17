@@ -49,6 +49,8 @@ zapret2.service -- см. zenith-promoter.service, User=root, тот же пат�
     sudo venv/bin/python3 auto_promoter.py --loop --interval-minutes 240
 """
 import argparse
+import json
+import os
 import subprocess
 import sys
 import time
@@ -70,9 +72,11 @@ PROMOTE_APPLY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/promote_apply_cli.sh"
 # strategy=). Значения ниже сверены ВЖИВУЮ на конкретном сервере
 # (NETH-4) 2026-08-16 -- см. CLAUDE.md Zenith про то, что конфиги на
 # разных серверах могут расходиться; при расхождении
-# promote_apply_cli.sh откажет БЕЗОПАСНО (не найдёт якорь/блок пуст),
-# не испортит файл -- но само автопродвижение для профиля работать не
-# будет, пока эти значения не перепроверены под конкретный сервер.
+# promote_apply_cli.sh откажет БЕЗОПАСНО (не найдёт якорь, или найдёт
+# его больше одного раза -- см. её же анти-неоднозначность фикс от
+# 2026-08-17 -- в обоих случаях просто откажется писать), не испортит
+# файл -- но само автопродвижение для профиля работать не будет, пока
+# эти значения не перепроверены под конкретный сервер.
 #
 #   ("template", <имя>) -- профиль сам не содержит strategy=N, только
 #     --import=<имя> общий шаблон (--template=<имя> в другом месте
@@ -85,7 +89,7 @@ PROMOTE_APPLY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/promote_apply_cli.sh"
 #   ("header", [строки]) -- профиль самодостаточен, strategy=N лежат
 #     прямо в его собственном блоке сразу после этих строк заголовка
 #     (точное посимвольное совпадение, по порядку).
-PROFILE_TARGETS = {
+_PROFILE_TARGETS_DEFAULTS = {
     "YT_TLS": ("template", "z2r_tcp_tls_common"),
     "RKN_TLS": ("template", "z2r_tcp_tls_common"),
     "DS_TLS": ("header", [
@@ -104,6 +108,39 @@ PROFILE_TARGETS = {
         "--payload=discord_ip_discovery,stun",
     ]),
 }
+
+
+def _load_profile_targets() -> dict:
+    """Дефолты выше сверены ТОЛЬКО с одним конкретным сервером (NETH-4) --
+    жёстко их использовать на любом новом провайдере (МТС и далее) без
+    возможности переопределить means либо совпадение (повезло), либо
+    безопасный отказ promote_apply_cli.sh (см. её же анти-неоднозначность
+    и якорь-не-найден проверки), но НЕ автопродвижение. Если рядом с этим
+    файлом лежит profile_targets.<ZENITH_ENVIRONMENT_NAME>.json (см.
+    config.LOCAL_ENVIRONMENT_NAME) -- переопределяет дефолты для
+    перечисленных там профилей, формат:
+      {"RKN_TLS": {"kind": "template", "value": "имя_шаблона"},
+       "DS_TLS": {"kind": "header", "value": ["строка1", "строка2", ...]}}
+    Найдено при аудите перед деплоем на МТС 2026-08-17 -- раньше не было
+    способа адаптировать эти значения под другой сервер без правки кода."""
+    targets = dict(_PROFILE_TARGETS_DEFAULTS)
+    override_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        f"profile_targets.{config.LOCAL_ENVIRONMENT_NAME}.json",
+    )
+    if os.path.exists(override_file):
+        try:
+            with open(override_file) as f:
+                overrides = json.load(f)
+            for profile, spec in overrides.items():
+                targets[profile] = (spec["kind"], spec["value"])
+            print(f"PROFILE_TARGETS: применены переопределения из {override_file}", file=sys.stderr)
+        except (OSError, ValueError, KeyError) as e:
+            print(f"PROFILE_TARGETS: не удалось прочитать {override_file}: {e} -- использую дефолты, сверенные на NETH-4 (могут не подойти этому серверу)", file=sys.stderr)
+    return targets
+
+
+PROFILE_TARGETS = _load_profile_targets()
 
 
 def _run(cmd: list, timeout: int = 20, input_text: str | None = None) -> subprocess.CompletedProcess:
@@ -175,13 +212,27 @@ def _real_traffic_check(conn, profile: str) -> tuple:
     return True, f"{len(domains)} домен(ов) прошли живую проверку"
 
 
-def _pick_promotable(conn, profile: str, environment_id: int, min_pulls: int):
+def _claim_promotable(conn, profile: str, environment_id: int, min_pulls: int):
     """pick_best() берёт ЛУЧШИЙ по avg_score среди подходящих -- если этот
     геном уже продвинут, надо не пропускать профиль целиком (вдруг есть
     следующий по качеству), а просто исключить уже продвинутые прямо в
     SQL. Не переиспользую pick_best() как чёрный ящик -- почти идентичный
-    запрос, но с доп. условием и без промежуточного re-check."""
+    запрос, но с доп. условием и без промежуточного re-check.
+
+    SELECT ... FOR UPDATE внутри короткой транзакции + немедленная
+    отметка "занято" (promoted_strategy=-1 -- сентинел, отличный от
+    NULL=свободен и >=1=реально продвинут) -- закрывает гонку между
+    двумя одновременными try_promote() за один и тот же геном (ручной
+    --profile поверх работающего --loop, как явно советует докстринг
+    этого файла, или два профиля с общим TEMPLATE-блоком). Лок держится
+    только на сам SELECT+UPDATE, не на всю долгую apply+restart+verify
+    цепочку -- иначе параллельный try_promote() для ДРУГОГО
+    профиля/генома простаивал бы без причины. Найдено при аудите перед
+    деплоем на МТС 2026-08-17 -- файловая гонка на самом config.py уже
+    закрыта flock'ом в promote_apply_cli.sh, эта -- на уровне БД,
+    отдельная и до него."""
     cur = conn.cursor(dictionary=True)
+    conn.start_transaction()
     cur.execute(
         """SELECT g.id, g.rendered_args, g.source, g.generation,
                   gs.pulls, gs.successes,
@@ -192,10 +243,30 @@ def _pick_promotable(conn, profile: str, environment_id: int, min_pulls: int):
              AND gs.pulls >= %s AND gs.successes = gs.pulls
              AND gs.promoted_strategy IS NULL
            ORDER BY avg_score DESC
-           LIMIT 1""",
+           LIMIT 1
+           FOR UPDATE""",
         (profile, environment_id, min_pulls),
     )
-    return cur.fetchone()
+    row = cur.fetchone()
+    if row:
+        cur.execute(
+            "UPDATE genome_scores SET promoted_strategy=-1 WHERE genome_id=%s AND environment_id=%s",
+            (row["id"], environment_id),
+        )
+    conn.commit()
+    return row
+
+
+def _release_claim(conn, genome_id: str, environment_id: int) -> None:
+    """Возвращает геном в пул кандидатов после неудачной попытки (откат)
+    -- НЕ трогает строку, если она уже реально продвинута (promoted_strategy
+    сменился на настоящий номер до вызова этой функции, WHERE ниже это
+    учитывает) или её успел освободить кто-то другой."""
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE genome_scores SET promoted_strategy=NULL WHERE genome_id=%s AND environment_id=%s AND promoted_strategy=-1",
+        (genome_id, environment_id),
+    )
 
 
 def _mark_promoted(conn, genome_id: str, environment_id: int, strategy_n: int) -> None:
@@ -206,15 +277,32 @@ def _mark_promoted(conn, genome_id: str, environment_id: int, strategy_n: int) -
     )
 
 
-def _rollback(profile: str, num: int, proto: str, backup_path: str, old_locked: str | None) -> str:
+def _rollback(conn, profile: str, num: int, proto: str, backup_path: str, old_locked: str | None, genome_id: str, environment_id: int) -> str:
+    """Всегда освобождает claim (см. _claim_promotable) -- независимо от
+    того, чем закончился сам откат конфига/стратегии, геном не должен
+    навсегда застрять с promoted_strategy=-1 (тогда его больше НИКОГДА не
+    выберет ни один будущий цикл). Текст возвращаемого сообщения
+    ЧЕСТНО отражает, что реально произошло со strategy -- раньше он
+    безусловно писал "strategy вернута на {old_locked}", даже если сам
+    _set_strategy() был пропущен (old_locked пуст/не число) или его код
+    возврата вообще не проверялся -- найдено при аудите перед деплоем на
+    МТС 2026-08-17."""
+    _release_claim(conn, genome_id, environment_id)
     if not backup_path:
         return f"{profile}: ОТКАТ НЕВОЗМОЖЕН -- путь к backup не распознан из вывода apply. Нужно вмешательство человека."
     restore_out = _run(["bash", PROMOTE_APPLY_CLI, "restore", backup_path, config.ZAPRET2_CONFIG_PATH])
     if restore_out.returncode != 0:
         return f"{profile}: ОТКАТ КОНФИГА НЕ УДАЛСЯ -- {restore_out.stderr.strip()}. Нужно вмешательство человека, backup: {backup_path}"
+
+    strategy_restored = False
     if old_locked and old_locked.isdigit():
-        _set_strategy(num, proto, old_locked)
+        strategy_restored = _set_strategy(num, proto, old_locked)
     _restart_zapret2()
+
+    if not old_locked or not old_locked.isdigit():
+        return f"{profile}: конфиг восстановлен из {backup_path}, но прежняя strategy неизвестна (не удалось прочитать до применения) -- НУЖНА РУЧНАЯ ПРОВЕРКА, какая strategy сейчас реально выбрана."
+    if not strategy_restored:
+        return f"{profile}: конфиг восстановлен из {backup_path}, но set_strategy_cli.sh set НЕ СМОГ вернуть strategy={old_locked} -- НУЖНА РУЧНАЯ ПРОВЕРКА."
     return f"{profile}: откат выполнен -- конфиг восстановлен из {backup_path}, strategy вернута на {old_locked}."
 
 
@@ -229,56 +317,77 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
     conn = db.connect()
     try:
         env_id = db.get_or_create_environment(conn, environment_name, provider)
-        candidate = _pick_promotable(conn, profile, env_id, min_pulls)
+        candidate = _claim_promotable(conn, profile, env_id, min_pulls)
         if not candidate:
             return f"{profile}: нет непродвинутого кандидата с {min_pulls}+ прогонами и 100% успехом -- пропуск."
 
-        current_max = _max_strategy(num)
-        if current_max is None or not current_max.isdigit():
-            return f"{profile}: не удалось прочитать текущий max strategy= -- пропуск."
-        old_locked = _get_strategy(num, proto)
+        # Геном УЖЕ claimed (promoted_strategy=-1) -- с этого момента и до
+        # конца функции при ЛЮБОМ исходе (успех/откат/неожиданное
+        # исключение) обязаны либо промоутнуть его по-настоящему
+        # (_mark_promoted), либо освободить (_rollback -> _release_claim
+        # внутри неё), иначе он навсегда застрянет недоступным будущим
+        # циклам. try/except ниже -- страховка именно на этот случай:
+        # раньше необработанное исключение (напр. subprocess.TimeoutExpired
+        # из зависшего restart/promote_apply_cli.sh) вылетало прямо из
+        # try_promote(), пропуская _rollback() целиком и оставляя claim
+        # висеть навечно -- найдено при аудите перед деплоем на МТС
+        # 2026-08-17.
+        try:
+            current_max = _max_strategy(num)
+            if current_max is None or not current_max.isdigit():
+                _release_claim(conn, candidate["id"], env_id)
+                return f"{profile}: не удалось прочитать текущий max strategy= -- пропуск, кандидат освобождён."
+            old_locked = _get_strategy(num, proto)
 
-        if target_kind == "template":
-            spec = f"TEMPLATE\n{target_value}\n"
-        else:
-            spec = "HEADER\n" + "\n".join(target_value) + "\n"
-        spec += "BODY\n" + "\n".join(candidate["rendered_args"].split("\n")) + "\n"
-        apply_out = _run(
-            ["bash", PROMOTE_APPLY_CLI, "apply", current_max, config.ZAPRET2_CONFIG_PATH, config.PROMOTE_BACKUP_DIR],
-            input_text=spec,
-        )
-        if apply_out.returncode != 0:
-            return f"{profile}: promote_apply_cli.sh apply отказал -- {apply_out.stderr.strip()}"
+            if target_kind == "template":
+                spec = f"TEMPLATE\n{target_value}\n"
+            else:
+                spec = "HEADER\n" + "\n".join(target_value) + "\n"
+            spec += "BODY\n" + "\n".join(candidate["rendered_args"].split("\n")) + "\n"
+            apply_out = _run(
+                ["bash", PROMOTE_APPLY_CLI, "apply", current_max, config.ZAPRET2_CONFIG_PATH, config.PROMOTE_BACKUP_DIR],
+                input_text=spec,
+            )
+            if apply_out.returncode != 0:
+                _release_claim(conn, candidate["id"], env_id)
+                return f"{profile}: promote_apply_cli.sh apply отказал -- {apply_out.stderr.strip()}"
 
-        strategy_n = apply_out.stdout.strip()
-        backup_line = next((l for l in apply_out.stderr.splitlines() if l.startswith("backup: ")), "")
-        backup_path = backup_line[len("backup: "):].strip()
+            strategy_n = apply_out.stdout.strip()
+            backup_line = next((l for l in apply_out.stderr.splitlines() if l.startswith("backup: ")), "")
+            backup_path = backup_line[len("backup: "):].strip()
 
-        # ВАЖНО: restart ПЕРЕД set, не наоборот -- см. promote.py "circular_locked
-        # держит max strategy= в памяти процесса без TTL, вычисляет один раз при
-        # первом коннекте" -- если выставить locked=N ДО рестарта, клиент,
-        # подключившийся в этом окне к ещё СТАРОМУ процессу (который не знает
-        # про новый strategy=N, только что дописанный в файл), тихо откатится на
-        # strategy=1 (живой инцидент 2026-08-07, тот же паттерн, что уже раз
-        # ломал прод -- найдено при аудите перед деплоем на МТС 2026-08-17,
-        # исправлено до первого реального срабатывания).
-        if not _restart_zapret2() or not _set_strategy(num, proto, strategy_n):
-            return _rollback(profile, num, proto, backup_path, old_locked)
+            # ВАЖНО: restart ПЕРЕД set, не наоборот -- см. promote.py "circular_locked
+            # держит max strategy= в памяти процесса без TTL, вычисляет один раз при
+            # первом коннекте" -- если выставить locked=N ДО рестарта, клиент,
+            # подключившийся в этом окне к ещё СТАРОМУ процессу (который не знает
+            # про новый strategy=N, только что дописанный в файл), тихо откатится на
+            # strategy=1 (живой инцидент 2026-08-07, тот же паттерн, что уже раз
+            # ломал прод -- найдено при аудите перед деплоем на МТС 2026-08-17,
+            # исправлено до первого реального срабатывания).
+            if not _restart_zapret2() or not _set_strategy(num, proto, strategy_n):
+                return _rollback(conn, profile, num, proto, backup_path, old_locked, candidate["id"], env_id)
 
-        time.sleep(SETTLE_SECONDS)
-        if not _zapret2_running() or _get_strategy(num, proto) != strategy_n:
-            return _rollback(profile, num, proto, backup_path, old_locked)
+            time.sleep(SETTLE_SECONDS)
+            if not _zapret2_running() or _get_strategy(num, proto) != strategy_n:
+                return _rollback(conn, profile, num, proto, backup_path, old_locked, candidate["id"], env_id)
 
-        traffic_ok, traffic_detail = _real_traffic_check(conn, profile)
-        if not traffic_ok:
-            rollback_msg = _rollback(profile, num, proto, backup_path, old_locked)
-            return f"{rollback_msg} Причина: живая проверка не прошла -- {traffic_detail}."
+            traffic_ok, traffic_detail = _real_traffic_check(conn, profile)
+            if not traffic_ok:
+                rollback_msg = _rollback(conn, profile, num, proto, backup_path, old_locked, candidate["id"], env_id)
+                return f"{rollback_msg} Причина: живая проверка не прошла -- {traffic_detail}."
 
-        _mark_promoted(conn, candidate["id"], env_id, int(strategy_n))
-        return (
-            f"{profile}: геном {candidate['id'][:12]} продвинут как strategy={strategy_n} "
-            f"(avg_score={candidate['avg_score']}, pulls={candidate['pulls']}, {traffic_detail})."
-        )
+            _mark_promoted(conn, candidate["id"], env_id, int(strategy_n))
+            return (
+                f"{profile}: геном {candidate['id'][:12]} продвинут как strategy={strategy_n} "
+                f"(avg_score={candidate['avg_score']}, pulls={candidate['pulls']}, {traffic_detail})."
+            )
+        except Exception as e:
+            _release_claim(conn, candidate["id"], env_id)
+            return (
+                f"{profile}: НЕОЖИДАННОЕ ИСКЛЮЧЕНИЕ во время продвижения -- {type(e).__name__}: {e}. "
+                "Кандидат освобождён для повторной попытки, но /opt/zapret2/config и текущая "
+                "strategy МОГЛИ остаться в непроверенном состоянии -- нужна ручная проверка."
+            )
     finally:
         conn.close()
 

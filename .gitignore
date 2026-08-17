@@ -15,3 +15,8 @@ sandbox/nfqws2_sandbox.debug.log
 # конкретном сервере, никогда не коммитятся, см. README "Публикация
 # панели через Cloudflare"
 panel/tls/
+
+# Переопределение PROFILE_TARGETS для конкретного сервера/провайдера
+# (см. orchestrator/auto_promoter.py::_load_profile_targets) -- сверено
+# под структуру ОДНОГО конкретного /opt/zapret2/config, не source.
+orchestrator/profile_targets.*.json

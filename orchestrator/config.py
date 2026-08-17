@@ -1,4 +1,5 @@
 import os
+import sys
 
 
 def _load_env(path):
@@ -42,8 +43,29 @@ SANDBOX_USER = os.environ.get("SANDBOX_USER", "zenith-sandbox")
 # Теперь дефолт читается из .env (той же переменной, что видит панель) --
 # один раз выставил ZENITH_ENVIRONMENT_NAME/PROVIDER на конкретной ноде,
 # дальше можно просто не думать про эти флаги на каждый запуск.
+LOCAL_ENVIRONMENT_NAME_IS_DEFAULT = "ZENITH_ENVIRONMENT_NAME" not in os.environ and "ZENITH_ENVIRONMENT_NAME" not in _ENV
 LOCAL_ENVIRONMENT_NAME = os.environ.get("ZENITH_ENVIRONMENT_NAME", _ENV.get("ZENITH_ENVIRONMENT_NAME", "prod-domru"))
 LOCAL_ENVIRONMENT_PROVIDER = os.environ.get("ZENITH_ENVIRONMENT_PROVIDER", _ENV.get("ZENITH_ENVIRONMENT_PROVIDER", "domru"))
+
+if LOCAL_ENVIRONMENT_NAME_IS_DEFAULT:
+    # Громкое предупреждение, не тихий дефолт -- забытый на новом сервере
+    # (напр. МТС) ZENITH_ENVIRONMENT_NAME означает, что ЛЮБОЙ прогон molча
+    # запишет/прочитает результаты под тем же environment_id, что и
+    # реальный боевой домру -- смешивая UCB-статистику и, что хуже,
+    # пул кандидатов для автопродвижения (auto_promoter.py) между
+    # СОВЕРШЕННО разными сетями. Найдено при аудите перед деплоем на МТС
+    # 2026-08-17. Печатается при каждом импорте -- намеренно, дешёвая
+    # разовая проверка, не спам (см. CLAUDE.md z2r_autobench "Publishing
+    # hygiene" -- сюда сервер по имени/провайдеру НЕ попадает, только сам
+    # факт, что переменная не задана).
+    print(
+        "!!! ZENITH_ENVIRONMENT_NAME не задан ни в окружении, ни в .env -- "
+        f"использую дефолт '{LOCAL_ENVIRONMENT_NAME}'/'{LOCAL_ENVIRONMENT_PROVIDER}'. "
+        "Если это НЕ тот сервер, для которого эти значения верны (напр. новый провайдер) -- "
+        "результаты смешаются с чужим окружением. Выстави ZENITH_ENVIRONMENT_NAME/"
+        "ZENITH_ENVIRONMENT_PROVIDER в .env.",
+        file=sys.stderr,
+    )
 
 # Для sync_client.py (удалённые ноды -> панель на боевом сервере, см.
 # z0r-panel/README.md). Пусто на самой панели/локальной ноде -- sync_client.py
