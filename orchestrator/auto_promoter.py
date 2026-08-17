@@ -254,7 +254,15 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
         backup_line = next((l for l in apply_out.stderr.splitlines() if l.startswith("backup: ")), "")
         backup_path = backup_line[len("backup: "):].strip()
 
-        if not _set_strategy(num, proto, strategy_n) or not _restart_zapret2():
+        # ВАЖНО: restart ПЕРЕД set, не наоборот -- см. promote.py "circular_locked
+        # держит max strategy= в памяти процесса без TTL, вычисляет один раз при
+        # первом коннекте" -- если выставить locked=N ДО рестарта, клиент,
+        # подключившийся в этом окне к ещё СТАРОМУ процессу (который не знает
+        # про новый strategy=N, только что дописанный в файл), тихо откатится на
+        # strategy=1 (живой инцидент 2026-08-07, тот же паттерн, что уже раз
+        # ломал прод -- найдено при аудите перед деплоем на МТС 2026-08-17,
+        # исправлено до первого реального срабатывания).
+        if not _restart_zapret2() or not _set_strategy(num, proto, strategy_n):
             return _rollback(profile, num, proto, backup_path, old_locked)
 
         time.sleep(SETTLE_SECONDS)
