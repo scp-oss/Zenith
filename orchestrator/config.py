@@ -81,3 +81,12 @@ PANEL_NODE_TOKEN = os.environ.get("PANEL_NODE_TOKEN", _ENV.get("PANEL_NODE_TOKEN
 Z2R_AUTOBENCH_DIR = os.environ.get("Z2R_AUTOBENCH_DIR", _ENV.get("Z2R_AUTOBENCH_DIR", os.path.dirname(ZENITH_DIR)))
 ZAPRET2_CONFIG_PATH = os.environ.get("ZAPRET2_CONFIG_PATH", _ENV.get("ZAPRET2_CONFIG_PATH", "/opt/zapret2/config"))
 PROMOTE_BACKUP_DIR = os.environ.get("PROMOTE_BACKUP_DIR", _ENV.get("PROMOTE_BACKUP_DIR", "/opt/zapret2/config_backups"))
+
+# Какие профили трогает автономный режим (zenith_autorun.sh -- генерация,
+# auto_promoter.py --loop -- продвижение) -- запятая без пробелов, напр.
+# "YT_TLS,DS_TLS". Пусто (дефолт) = все 4 профиля с проверенным
+# PROFILE_TARGETS (см. auto_promoter.py). Ставится через z0r (пункт
+# 22 -> 4 -> "профили"), не руками -- меню само проверяет имена и пишет
+# сюда же в .env. zenith_autorun.sh читает эту же переменную напрямую
+# из .env (bash-скрипт, config.py не сорсит).
+ZENITH_PROFILES = os.environ.get("ZENITH_PROFILES", _ENV.get("ZENITH_PROFILES", ""))

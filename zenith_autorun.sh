@@ -16,6 +16,8 @@
 # Настройки через переменные окружения (см. zenith-autorun.service):
 #   ZENITH_AUTORUN_INTERVAL_MINUTES=240
 #   ZENITH_AUTORUN_ROUNDS=20
+# Какие профили перебирать -- через .env (ZENITH_PROFILES=YT_TLS,DS_TLS),
+# не через окружение -- см. z0r 22 -> 4 -> "профили".
 #
 # Запуск (напрямую, для отладки):
 #   ZENITH_DIR=/opt/z2r_autobench/Zenith bash zenith_autorun.sh
@@ -28,7 +30,24 @@ VENV_PYTHON="$ZENITH_DIR/orchestrator/venv/bin/python3"
 # Ровно те 4 профиля, для которых у orchestrator/genome.py есть проверенный
 # PROFILE_FILTERS (см. её докстринг) -- совпадает с promote.py
 # --profile choices и z0r-panel main.py::RUNNABLE_PROFILES.
-PROFILES=(YT_TLS RKN_TLS DS_TLS VOICE_UDP)
+DEFAULT_PROFILES=(YT_TLS RKN_TLS DS_TLS VOICE_UDP)
+
+# ZENITH_PROFILES в .env (та же переменная, что читает config.py в Python-
+# части, см. auto_promoter.py) -- сузить автономный режим до подмножества
+# профилей вместо всех 4. Ставится через z0r (22 -> 4 -> "профили"), не
+# руками. Пусто/не задано -- все 4, как раньше. Читаем .env напрямую, не
+# через environment=, т.к. это простой bash-скрипт без своего .env-loader.
+_zenith_profiles_env() {
+  local file="$ZENITH_DIR/.env"
+  [ -f "$file" ] || return 0
+  grep -E '^ZENITH_PROFILES=' "$file" 2>/dev/null | tail -1 | cut -d= -f2-
+}
+_selected_profiles="$(_zenith_profiles_env)"
+if [ -n "$_selected_profiles" ]; then
+  IFS=',' read -ra PROFILES <<< "$_selected_profiles"
+else
+  PROFILES=("${DEFAULT_PROFILES[@]}")
+fi
 INTERVAL_MINUTES="${ZENITH_AUTORUN_INTERVAL_MINUTES:-240}"
 ROUNDS="${ZENITH_AUTORUN_ROUNDS:-20}"
 
