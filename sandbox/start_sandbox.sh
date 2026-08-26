@@ -28,13 +28,21 @@ PIDFILE="$SCRIPT_DIR/nfqws2_sandbox.pid"
 # nfqws2 падал с "cannot access file ...tls_clienthello_max_ru.bin" на
 # самом старте песочницы. Определяем реальную базу так же, как
 # z2r_autobench_lib.sh::_z2r_detect_base(), а не хардкодим вторую догадку.
-if [ -d "/opt/zapret2/files/fake" ]; then
+#
+# ВАЖНО: проверяем не просто "директория существует" -- на miha
+# /opt/zapret2/files/fake существовала как ПУСТАЯ (или неполная)
+# директория, первая же проверка `[ -d ... ]` проходила, и FAKE_DIR
+# резолвился туда же, где нужного файла всё равно нет (первый заход на
+# этот баг, 2026-08-26, был именно такой -- фикс на директорию не помог).
+# Проверяем конкретный файл, который реально нужен шаблону.
+_fake_probe="tls_clienthello_max_ru.bin"
+if [ -f "/opt/zapret2/files/fake/$_fake_probe" ]; then
   FAKE_DIR="/opt/zapret2/files/fake"
-elif [ -d "/opt/zator/files/fake" ]; then
+elif [ -f "/opt/zator/files/fake/$_fake_probe" ]; then
   FAKE_DIR="/opt/zator/files/fake"
 else
   FAKE_DIR="/opt/zapret2/files/fake"
-  echo "Не нашёл files/fake ни под /opt/zapret2, ни под /opt/zator -- использую дефолт $FAKE_DIR, скорее всего сломается." >&2
+  echo "Не нашёл $_fake_probe ни под /opt/zapret2/files/fake, ни под /opt/zator/files/fake -- использую дефолт $FAKE_DIR, скорее всего сломается." >&2
 fi
 
 [ -f "$QUEUE_FILE" ] || { echo "Нет $QUEUE_FILE — сначала запусти setup_sandbox.sh." >&2; exit 1; }
