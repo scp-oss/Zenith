@@ -82,6 +82,29 @@ Z2R_AUTOBENCH_DIR = os.environ.get("Z2R_AUTOBENCH_DIR", _ENV.get("Z2R_AUTOBENCH_
 ZAPRET2_CONFIG_PATH = os.environ.get("ZAPRET2_CONFIG_PATH", _ENV.get("ZAPRET2_CONFIG_PATH", "/opt/zapret2/config"))
 PROMOTE_BACKUP_DIR = os.environ.get("PROMOTE_BACKUP_DIR", _ENV.get("PROMOTE_BACKUP_DIR", "/opt/zapret2/config_backups"))
 
+
+def _detect_z2r_base():
+    # Живой случай на miha (МТС) 2026-08-26, тот же класс бага, что уже
+    # документирован в z2r_autobench/CLAUDE.md "/opt/zapret2 vs
+    # /opt/zator": genome.py::PROFILE_FILTERS хардкодил
+    # /opt/zapret2/extra_strats/TCP_*.txt, а на штатной раскладке
+    # апстрим-установщика extra_strats/ реально лежит под /opt/zator --
+    # каждый геном в песочнице падал с "cannot access hostlist file", все
+    # 20 раундов подряд, для каждого TCP-профиля. Пробуем КОНКРЕТНЫЙ файл,
+    # а не просто "директория существует" -- урок того же дня из
+    # sandbox/start_sandbox.sh (FAKE_DIR): на miha /opt/zapret2/extra_strats
+    # может существовать как пустая/неполная директория и пройти `-d`
+    # проверку, не имея нужного файла внутри.
+    probe = "extra_strats/TCP_YT_list.txt"
+    if os.path.isfile(f"/opt/zapret2/{probe}"):
+        return "/opt/zapret2"
+    if os.path.isfile(f"/opt/zator/{probe}"):
+        return "/opt/zator"
+    return "/opt/zapret2"
+
+
+Z2R_BASE = os.environ.get("Z2R_BASE", _ENV.get("Z2R_BASE", _detect_z2r_base()))
+
 # Какие профили трогает автономный режим (zenith_autorun.sh -- генерация,
 # auto_promoter.py --loop -- продвижение) -- запятая без пробелов, напр.
 # "YT_TLS,DS_TLS". Пусто (дефолт) = все 4 профиля с проверенным

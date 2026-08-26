@@ -10,6 +10,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
+import config
+
 FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder", "hostfakesplit", "udplen", "send")
 
 PROFILE_FILTER_TYPE = {
@@ -28,18 +30,27 @@ PROFILE_FILTER_TYPE = {
 # разрыв достоверности песочницы"). --qnum 300 у боевого YT-блока НЕ
 # включён -- песочница держит свой qnum отдельно
 # (sandbox/nfqws2_sandbox.conf.template), это не часть фильтра как такового.
+#
+# extra_strats/-пути через config.Z2R_BASE, не хардкод /opt/zapret2 --
+# живой случай на miha (МТС) 2026-08-26, тот же класс бага, что уже
+# документирован в z2r_autobench/CLAUDE.md "/opt/zapret2 vs /opt/zator":
+# на штатной раскладке апстрим-установщика extra_strats/ реально лежит
+# под /opt/zator, каждый геном в песочнице падал с "cannot access
+# hostlist file" на TCP_YT_list.txt, все 20 раундов подряд. lists/
+# (netrogat.txt) НЕ входит в то, что документированно расщепляется --
+# остаётся хардкодом /opt/zapret2, как база, которая никогда не splitится.
 PROFILE_FILTERS = {
     "YT_TLS": [
         "--filter-tcp=443 --filter-l7=tls",
-        "--hostlist=/opt/zapret2/extra_strats/TCP_YT_list.txt",
+        f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_YT_list.txt",
         "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],
     "RKN_TLS": [
         "--filter-tcp=80,443,2053,2083,2087,2096,8443 --filter-l7=tls",
-        "--hostlist=/opt/zapret2/extra_strats/TCP_RKN_list.txt",
-        "--hostlist=/opt/zapret2/extra_strats/TCP_Custom.txt",
-        "--hostlist-exclude=/opt/zapret2/extra_strats/TCP_Discord.txt",
+        f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_RKN_list.txt",
+        f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_Custom.txt",
+        f"--hostlist-exclude={config.Z2R_BASE}/extra_strats/TCP_Discord.txt",
         "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],
@@ -48,7 +59,7 @@ PROFILE_FILTERS = {
     # есть, это реальный боевой конфиг, не опечатка, которую надо "исправить".
     "DS_TLS": [
         "--filter-tcp=80,443,2053,2083,2087,2096,8443",
-        "--hostlist=/opt/zapret2/extra_strats/TCP_Discord.txt",
+        f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_Discord.txt",
         "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],
