@@ -21,6 +21,22 @@ TEMPLATE="$SCRIPT_DIR/nfqws2_sandbox.conf.template"
 LIVE_CONF="$SCRIPT_DIR/nfqws2_sandbox.conf"
 PIDFILE="$SCRIPT_DIR/nfqws2_sandbox.pid"
 
+# Живой случай на miha (МТС) 2026-08-26: шаблон раньше хардкодил
+# /opt/zapret2/files/fake/... для всех --blob= (см. CLAUDE.md
+# z2r_autobench "/opt/zapret2 vs /opt/zator" -- files/ не обязательно
+# живёт под /opt/zapret2 на штатной раскладке апстрим-установщика).
+# nfqws2 падал с "cannot access file ...tls_clienthello_max_ru.bin" на
+# самом старте песочницы. Определяем реальную базу так же, как
+# z2r_autobench_lib.sh::_z2r_detect_base(), а не хардкодим вторую догадку.
+if [ -d "/opt/zapret2/files/fake" ]; then
+  FAKE_DIR="/opt/zapret2/files/fake"
+elif [ -d "/opt/zator/files/fake" ]; then
+  FAKE_DIR="/opt/zator/files/fake"
+else
+  FAKE_DIR="/opt/zapret2/files/fake"
+  echo "Не нашёл files/fake ни под /opt/zapret2, ни под /opt/zator -- использую дефолт $FAKE_DIR, скорее всего сломается." >&2
+fi
+
 [ -f "$QUEUE_FILE" ] || { echo "Нет $QUEUE_FILE — сначала запусти setup_sandbox.sh." >&2; exit 1; }
 [ -x "$NFQWS2_BIN" ] || { echo "$NFQWS2_BIN не найден — z2r/zapret2 установлен?" >&2; exit 1; }
 
@@ -30,7 +46,7 @@ qnum="$(cat "$QUEUE_FILE")"
 # существует, это значит оркестратор его уже переписал под конкретный
 # геном, и перезатирать эту работу шаблоном при каждом старте нельзя.
 if [ ! -f "$LIVE_CONF" ]; then
-  sed -e "s#__QNUM__#$qnum#g" -e "s#__ZENITH_DIR__#$SCRIPT_DIR/..#g" "$TEMPLATE" > "$LIVE_CONF"
+  sed -e "s#__QNUM__#$qnum#g" -e "s#__ZENITH_DIR__#$SCRIPT_DIR/..#g" -e "s#__FAKE_DIR__#$FAKE_DIR#g" "$TEMPLATE" > "$LIVE_CONF"
   echo "Сгенерирован $LIVE_CONF из шаблона (первый запуск)."
 fi
 

@@ -5,14 +5,14 @@
 --debug=@__ZENITH_DIR__/sandbox/nfqws2_sandbox.debug.log
 --lua-init=@/opt/zapret2/lua/zapret-lib.lua
 --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua
---blob=maxru:@/opt/zapret2/files/fake/tls_clienthello_max_ru.bin
---blob=google_www:@/opt/zapret2/files/fake/tls_clienthello_www_google_com.bin
---blob=tls4:@/opt/zapret2/files/fake/tls_clienthello_4.bin
---blob=custom:@/opt/zapret2/files/fake/custom_tls.bin
---blob=tls5:@/opt/zapret2/files/fake/tls_clienthello_5.bin
---blob=stun_fake:@/opt/zapret2/files/fake/stun.bin
---blob=discord_fake:@/opt/zapret2/files/fake/quic_initial_dbankcloud_ru.bin
---blob=discord_udp_1:@/opt/zapret2/files/fake/discord_udp_1.bin
---blob=discord_udp_2:@/opt/zapret2/files/fake/discord_udp_2.bin
+--blob=maxru:@__FAKE_DIR__/tls_clienthello_max_ru.bin
+--blob=google_www:@__FAKE_DIR__/tls_clienthello_www_google_com.bin
+--blob=tls4:@__FAKE_DIR__/tls_clienthello_4.bin
+--blob=custom:@__FAKE_DIR__/custom_tls.bin
+--blob=tls5:@__FAKE_DIR__/tls_clienthello_5.bin
+--blob=stun_fake:@__FAKE_DIR__/stun.bin
+--blob=discord_fake:@__FAKE_DIR__/quic_initial_dbankcloud_ru.bin
+--blob=discord_udp_1:@__FAKE_DIR__/discord_udp_1.bin
+--blob=discord_udp_2:@__FAKE_DIR__/discord_udp_2.bin
 --filter-tcp=443 --filter-l7=tls
 --lua-desync=fake:blob=fake_default_tls:ip_ttl=6
