@@ -26,6 +26,7 @@ import config
 import controls
 import db
 import genome as genome_mod
+import gv_resolver
 import sandbox_apply
 import scoring
 import tester
@@ -51,6 +52,14 @@ def measure(conn, env_id: int, gid: str, filter_lines: list, lua_lines: list, do
                 # z2r_test-voice-bot применяет геном в своей песочнице сам
                 # на каждый вызов -- не sandbox_apply.apply_raw() отсюда.
                 success, bytes_, latency_ms = voice_tester.probe(lua_lines)
+            elif profile == "GV_TLS":
+                # См. main.py -- GV_TLS не тестируется по фиксированному
+                # host/path, URL резолвится заново на каждую попытку.
+                gv_url = gv_resolver.resolve_googlevideo_url()
+                if not gv_url:
+                    print("  не удалось резолвить googlevideo.com URL через yt-dlp, пропуск попытки", file=sys.stderr)
+                    continue
+                success, bytes_, latency_ms = tester.probe_url(gv_url, domain["min_bytes"])
             else:
                 success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
             reward = scoring.compute_reward(success, latency_ms)
@@ -137,7 +146,7 @@ def run(profile: str, trials: int, environment_name: str, provider: str) -> int:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "GV_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--trials", type=int, default=5, help="попыток НА КАЖДЫЙ домен профиля (для VOICE_UDP -- попыток подключения)")
     ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME)
     ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)

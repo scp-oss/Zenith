@@ -130,7 +130,7 @@ def run(profile: str, genome_id: str, after_strategy: int, environment_name: str
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "GV_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--genome-id", help="id (или префикс) конкретного генома; иначе автовыбор лучшего")
     ap.add_argument("--after-strategy", type=int, required=True, help="текущий max strategy= для профиля")
     ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME)

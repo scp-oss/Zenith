@@ -26,6 +26,7 @@ import time
 import config
 import db
 import genome as genome_mod
+import gv_resolver
 import panel_client
 import sandbox_apply
 import scoring
@@ -79,7 +80,16 @@ def run(profile: str, environment_name: str, provider: str, min_pulls: int, limi
                     print(f"    не удалось применить в песочнице{detail}, пропуск кандидата", file=sys.stderr)
                     break
                 time.sleep(SETTLE_SECONDS)
-                success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+                if profile == "GV_TLS":
+                    # См. main.py -- GV_TLS не тестируется по фиксированному
+                    # host/path, URL резолвится заново на каждую попытку.
+                    gv_url = gv_resolver.resolve_googlevideo_url()
+                    if not gv_url:
+                        print("    не удалось резолвить googlevideo.com URL через yt-dlp, пропуск попытки", file=sys.stderr)
+                        continue
+                    success, bytes_, latency_ms = tester.probe_url(gv_url, domain["min_bytes"])
+                else:
+                    success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
             reward = scoring.compute_reward(success, latency_ms)
             db.record_experiment(conn, gid, env_id, domain["id"], success, bytes_, latency_ms)
             db.upsert_genome_score(conn, gid, env_id, success, reward)
@@ -108,7 +118,7 @@ def run(profile: str, environment_name: str, provider: str, min_pulls: int, limi
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "GV_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME)
     ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)
     ap.add_argument("--min-pulls", type=int, default=3, help="мин. прогонов на панели, чтобы считать кандидата достаточно проверенным")

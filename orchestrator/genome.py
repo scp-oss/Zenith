@@ -16,6 +16,7 @@ FAMILIES = ("fake", "multisplit", "multidisorder", "fakeddisorder", "hostfakespl
 
 PROFILE_FILTER_TYPE = {
     "YT_TLS": "tcp/443",
+    "GV_TLS": "tcp/443",
     "RKN_TLS": "tcp/443",
     "DS_TLS": "tcp/443",
     "VOICE_UDP": "udp/443",
@@ -49,6 +50,21 @@ PROFILE_FILTERS = {
     "YT_TLS": [
         "--filter-tcp=443 --filter-l7=tls",
         f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_YT_list.txt",
+        f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
+        "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
+    ],
+    # GV_TLS -- сверено построчно с живым /opt/zapret2/config 2026-08-26.
+    # В отличие от YT/RKN/DS, тут не файловый --hostlist=, а инлайновый
+    # --hostlist-domains=googlevideo.com (в боевом конфиге -- часть блока
+    # с --out-range=/--in-range=/--import=z2r_tcp_tls_common, которые тут
+    # не нужны -- они выбирают АКТИВНУЮ boевую strategy=N среди уже
+    # прописанных, песочница вместо этого просто подставляет геном
+    # напрямую в --lua-desync=). Тестовый URL для этого профиля НЕ
+    # фиксированный домен из domain_pool -- резолвится динамически через
+    # yt-dlp на каждый раунд заново, см. gv_resolver.py и main.py.
+    "GV_TLS": [
+        "--filter-tcp=443 --filter-l7=tls",
+        "--hostlist-domains=googlevideo.com",
         f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],

@@ -27,9 +27,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ZENITH_DIR="${ZENITH_DIR:-$SCRIPT_DIR}"
 VENV_PYTHON="$ZENITH_DIR/orchestrator/venv/bin/python3"
 
-# Ровно те 4 профиля, для которых у orchestrator/genome.py есть проверенный
-# PROFILE_FILTERS (см. её докстринг) -- совпадает с promote.py
-# --profile choices и z0r-panel main.py::RUNNABLE_PROFILES.
+# Профили автономной ротации по умолчанию. GV_TLS сознательно НЕ входит
+# сюда, хотя genome.py/main.py её уже полноценно поддерживают (добавлено
+# 2026-08-26, см. gv_resolver.py) -- её тестовый URL резолвится через
+# yt-dlp -> youtube.com, а этот запрос идёт НЕ через песочницу, а обычным
+# путём хоста (см. CLAUDE.md z2r_autobench про ту же зависимость у
+# profile 2/5 самого z2r: если сеть до youtube.com в моменте не работает
+# независимо от DPI, GV_TLS будет ложно проваливать каждый раунд, выглядя
+# как "все геномы плохие"). Включить явно через ZENITH_PROFILES в .env
+# (см. z0r пункт Zenith -> Автономный режим -> профили), когда resolve
+# подтверждён рабочим на конкретном сервере.
 DEFAULT_PROFILES=(YT_TLS RKN_TLS DS_TLS VOICE_UDP)
 
 # Общий .env-ридер (bash-скрипт, своего .env-loader нет -- та же простая

@@ -87,9 +87,7 @@ CREATE TABLE domain_pool (
 );
 
 -- Стартовые домены — те же самые, что уже использует z2r_autobench
--- (rank_strategies.sh) для соответствующих профилей, не новые. GV_TLS
--- сюда не входит — её тестовый URL резолвится динамически через yt-dlp
--- (get_gv_test_url), а не фиксированный домен.
+-- (rank_strategies.sh) для соответствующих профилей, не новые.
 -- rutor.info для RKN_TLS подтверждён живьём в /opt/zapret2/extra_strats/
 -- TCP_RKN_list.txt (тот же хостлист, что реально маршрутизирует rutracker.org
 -- через профиль 3 — см. README) — не наугад добавлен.
@@ -98,12 +96,17 @@ CREATE TABLE domain_pool (
 -- каналу (см. orchestrator/voice_tester.py), не HTTP-запрос к хосту.
 -- host/path/min_bytes тут не используются voice_tester'ом, нужна только
 -- сама строка ради domain_id (experiments.domain_id NOT NULL).
+-- GV_TLS (добавлен 2026-08-26) -- та же логика: реальный тестовый URL
+-- резолвится ЗАНОВО на каждый раунд через yt-dlp (см. orchestrator/
+-- gv_resolver.py) -- CDN-эдж "прилипает" к паре video_id+IP, фиксированный
+-- URL быстро протухает. Эта запись -- только ради domain_id.
 INSERT INTO domain_pool (host, path, profile_hint, min_bytes) VALUES
     ('www.youtube.com', '/', 'YT_TLS', 65536),
     ('meduza.io', '/', 'RKN_TLS', 65536),
     ('rutor.info', '/', 'RKN_TLS', 65536),
     ('discord.com', '/', 'DS_TLS', 65536),
-    ('discord-voice-test', '/', 'VOICE_UDP', 0);
+    ('discord-voice-test', '/', 'VOICE_UDP', 0),
+    ('googlevideo.com', '/', 'GV_TLS', 65536);
 
 -- Каждый прогон генома против домена/окружения — сырая история для скоринга.
 CREATE TABLE experiments (

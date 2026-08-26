@@ -57,7 +57,7 @@ def cmd_pull(profile: str, environment_name: str, provider: str, min_pulls: int,
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("action", choices=["push", "pull"])
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "GV_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME)
     ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)
     ap.add_argument("--min-pulls", type=int, default=3)

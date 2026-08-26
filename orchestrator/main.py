@@ -27,6 +27,7 @@ import config
 import controls
 import db
 import genome as genome_mod
+import gv_resolver
 import mutate
 import sandbox_apply
 import scoring
@@ -122,7 +123,14 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
             print(f"  не удалось применить control в песочнице{detail}", file=sys.stderr)
             return False
         time.sleep(BASE_SETTLE_SECONDS)
-        success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+        if profile == "GV_TLS":
+            gv_url = gv_resolver.resolve_googlevideo_url()
+            if not gv_url:
+                print("  не удалось резолвить googlevideo.com URL через yt-dlp, control-проверка невозможна", file=sys.stderr)
+                return False
+            success, bytes_, latency_ms = tester.probe_url(gv_url, domain["min_bytes"])
+        else:
+            success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
     print(f"  control-проверка: {'OK' if success else 'fail'} ({bytes_} bytes)")
 
     control_gid = db.insert_control_genome(conn, profile, control)
@@ -190,7 +198,21 @@ def run(profile: str, rounds: int, environment_name: str, provider: str, domain_
                 continue
 
             time.sleep(settle)
-            success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+            if profile == "GV_TLS":
+                # GV_TLS не тестируется по фиксированному host/path из
+                # domain_pool (см. db/schema.sql -- googlevideo.com там
+                # только placeholder ради domain_id) -- реальный
+                # googlevideo.com URL резолвится заново на каждый раунд
+                # через yt-dlp, иначе CDN-эдж залипает на одном video_id и
+                # бан одного эджа ложно валит весь прогон целиком (см.
+                # gv_resolver.py докстринг).
+                gv_url = gv_resolver.resolve_googlevideo_url()
+                if not gv_url:
+                    print("  не удалось резолвить googlevideo.com URL через yt-dlp (сеть до youtube.com сама по себе не работает?), пропуск", file=sys.stderr)
+                    continue
+                success, bytes_, latency_ms = tester.probe_url(gv_url, domain["min_bytes"])
+            else:
+                success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
         reward = scoring.compute_reward(success, latency_ms)
 
         db.record_experiment(conn, gid, env_id, domain["id"], success, bytes_, latency_ms)
@@ -230,7 +252,7 @@ def run(profile: str, rounds: int, environment_name: str, provider: str, domain_
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", required=True, choices=["YT_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
+    ap.add_argument("--profile", required=True, choices=["YT_TLS", "GV_TLS", "RKN_TLS", "DS_TLS", "VOICE_UDP"])
     ap.add_argument("--rounds", type=int, default=20)
     ap.add_argument("--environment", default=config.LOCAL_ENVIRONMENT_NAME, help="имя окружения в таблице environments")
     ap.add_argument("--provider", default=config.LOCAL_ENVIRONMENT_PROVIDER)

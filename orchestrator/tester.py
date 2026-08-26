@@ -14,8 +14,7 @@ import config
 DEFAULT_TIMEOUT = 5
 
 
-def probe(host: str, path: str, min_bytes: int) -> tuple:
-    url = f"https://{host}{path}"
+def _curl_probe(url: str, min_bytes: int) -> tuple:
     start = time.monotonic()
     bytes_ = 0
     try:
@@ -34,3 +33,14 @@ def probe(host: str, path: str, min_bytes: int) -> tuple:
     latency_ms = int((time.monotonic() - start) * 1000)
     success = bytes_ >= min_bytes
     return success, bytes_, latency_ms
+
+
+def probe(host: str, path: str, min_bytes: int) -> tuple:
+    return _curl_probe(f"https://{host}{path}", min_bytes)
+
+
+def probe_url(url: str, min_bytes: int) -> tuple:
+    """Как probe(), но берёт готовый URL целиком -- для GV_TLS, чей
+    реальный тестовый адрес резолвится динамически (см. gv_resolver.py),
+    а не берётся из фиксированного host/path в domain_pool."""
+    return _curl_probe(url, min_bytes)
