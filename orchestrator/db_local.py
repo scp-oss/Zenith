@@ -6,6 +6,7 @@ main.py/bootstrap.py/compare_control.py/promote.py only ever `import db`,
 never this module directly."""
 import hashlib
 import json
+import uuid
 
 import mysql.connector
 import config
@@ -28,9 +29,15 @@ def get_or_create_environment(conn, name: str, provider: str) -> int:
     row = cur.fetchone()
     if row:
         return row[0]
+    # node_uuid раньше выдавался ТОЛЬКО при создании токена удалённой ноды
+    # (см. db/schema.sql) -- локальные/прод-окружения, создаваемые ЗДЕСЬ
+    # (без токена вообще), оставались с node_uuid=NULL навсегда. Панель
+    # использует node_uuid как единообразный короткий идентификатор ноды
+    # (см. z0r-panel overview/nodes) -- локальным нодам он нужен ровно
+    # для того же самого, не только удалённым.
     cur.execute(
-        "INSERT INTO environments (name, provider) VALUES (%s, %s)",
-        (name, provider),
+        "INSERT INTO environments (name, provider, node_uuid) VALUES (%s, %s, %s)",
+        (name, provider, str(uuid.uuid4())),
     )
     return cur.lastrowid
 

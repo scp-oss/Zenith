@@ -27,7 +27,7 @@ CREATE TABLE environments (
     is_production   BOOLEAN NOT NULL DEFAULT FALSE, -- прод-сервер = TRUE, остальные ВМ для рискованных тестов
     active          BOOLEAN NOT NULL DEFAULT TRUE,
     api_token_hash  CHAR(64) NULL,                 -- sha256(токена) удалённой ноды; NULL = локальная запись
-    node_uuid       CHAR(36) NULL,                 -- стабильный идентификатор ноды, выдаётся при создании токена
+    node_uuid       CHAR(36) NULL,                 -- стабильный идентификатор ноды -- выдаётся при создании токена удалённой ноды, либо самой get_or_create_environment() для локальных
     last_sync_at    TIMESTAMP NULL,                -- последний успешный push от этой ноды
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_api_token_hash (api_token_hash),
