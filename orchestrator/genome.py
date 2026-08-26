@@ -31,19 +31,25 @@ PROFILE_FILTER_TYPE = {
 # включён -- песочница держит свой qnum отдельно
 # (sandbox/nfqws2_sandbox.conf.template), это не часть фильтра как такового.
 #
-# extra_strats/-пути через config.Z2R_BASE, не хардкод /opt/zapret2 --
-# живой случай на Server B (Provider B) 2026-08-26, тот же класс бага, что уже
-# документирован в z2r_autobench/CLAUDE.md "/opt/zapret2 vs /opt/zator":
-# на штатной раскладке апстрим-установщика extra_strats/ реально лежит
-# под /opt/zator, каждый геном в песочнице падал с "cannot access
-# hostlist file" на TCP_YT_list.txt, все 20 раундов подряд. lists/
-# (netrogat.txt) НЕ входит в то, что документированно расщепляется --
-# остаётся хардкодом /opt/zapret2, как база, которая никогда не splitится.
+# extra_strats/ И lists/-пути через config.Z2R_BASE, не хардкод
+# /opt/zapret2 -- живой случай на Server B (Provider B) 2026-08-26, тот же
+# класс бага, что уже документирован в z2r_autobench/CLAUDE.md
+# "/opt/zapret2 vs /opt/zator": на штатной раскладке апстрим-установщика
+# extra_strats/ реально лежит под /opt/zator, каждый геном в песочнице
+# падал с "cannot access hostlist file" на TCP_YT_list.txt, все 20
+# раундов подряд. Первый фикс (2026-08-26, коммит 84f7f5c) занёс под
+# Z2R_BASE только extra_strats/ -- заявив в комментарии, что lists/
+# (netrogat.txt) якобы не входит в то, что расщепляется. Это оказалось
+# неверно: следующий же прогон на Server B упал ровно на
+# "/opt/zapret2/lists/netrogat.txt" той же ошибкой -- на этом сервере
+# lists/ расщепляется вместе с extra_strats/, а не отдельно. Урок:
+# не утверждать "X не расщепляется" по отсутствию contrary evidence --
+# только по прямой проверке на живом сервере.
 PROFILE_FILTERS = {
     "YT_TLS": [
         "--filter-tcp=443 --filter-l7=tls",
         f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_YT_list.txt",
-        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],
     "RKN_TLS": [
@@ -51,7 +57,7 @@ PROFILE_FILTERS = {
         f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_RKN_list.txt",
         f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_Custom.txt",
         f"--hostlist-exclude={config.Z2R_BASE}/extra_strats/TCP_Discord.txt",
-        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],
     # DS_TLS в реальном конфиге НЕ содержит --filter-l7=tls в своей
@@ -60,7 +66,7 @@ PROFILE_FILTERS = {
     "DS_TLS": [
         "--filter-tcp=80,443,2053,2083,2087,2096,8443",
         f"--hostlist={config.Z2R_BASE}/extra_strats/TCP_Discord.txt",
-        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
     ],
     # VOICE_UDP (профиль 6) -- порты сверены построчно с /opt/zapret2/config
