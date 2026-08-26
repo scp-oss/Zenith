@@ -17,7 +17,7 @@ _REWRITE_PREFIXES = (
     "--payload=", "--lua-desync=",
 )
 
-# Живой случай на miha (МТС) 2026-08-26: apply_raw() возвращал только bool,
+# Живой случай на Server B (Provider B) 2026-08-26: apply_raw() возвращал только bool,
 # а все вызывающие (main.py и т.д.) на "не удалось" печатали один и тот же
 # универсальный текст без деталей -- реальный stderr от финального
 # start_sandbox.sh (там, где nfqws2 фактически не поднялся) нигде не
@@ -41,7 +41,7 @@ def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
         with open(CONF_PATH) as f:
             lines = f.readlines()
     except FileNotFoundError:
-        # Живой случай на miha (МТС) 2026-08-26: setup_sandbox.sh (одноразовая
+        # Живой случай на Server B (Provider B) 2026-08-26: setup_sandbox.sh (одноразовая
         # настройка -- юзер + iptables NFQUEUE-правило + queue_num) был
         # выполнен, но start_sandbox.sh -- НЕТ, поэтому nfqws2_sandbox.conf
         # ни разу не сгенерился из шаблона. Раньше это было RuntimeError,

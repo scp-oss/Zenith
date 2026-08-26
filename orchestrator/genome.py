@@ -32,7 +32,7 @@ PROFILE_FILTER_TYPE = {
 # (sandbox/nfqws2_sandbox.conf.template), это не часть фильтра как такового.
 #
 # extra_strats/-пути через config.Z2R_BASE, не хардкод /opt/zapret2 --
-# живой случай на miha (МТС) 2026-08-26, тот же класс бага, что уже
+# живой случай на Server B (Provider B) 2026-08-26, тот же класс бага, что уже
 # документирован в z2r_autobench/CLAUDE.md "/opt/zapret2 vs /opt/zator":
 # на штатной раскладке апстрим-установщика extra_strats/ реально лежит
 # под /opt/zator, каждый геном в песочнице падал с "cannot access

@@ -70,7 +70,7 @@ PROMOTE_APPLY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/promote_apply_cli.sh"
 # applier'у одного генома circular_locked/--import не нужны вообще, это
 # чисто продовый механизм выбора СРЕДИ НЕСКОЛЬКИХ уже загруженных
 # strategy=). Значения ниже сверены ВЖИВУЮ на конкретном сервере
-# (NETH-4) 2026-08-16 -- см. CLAUDE.md Zenith про то, что конфиги на
+# (Server A) 2026-08-16 -- см. CLAUDE.md Zenith про то, что конфиги на
 # разных серверах могут расходиться; при расхождении
 # promote_apply_cli.sh откажет БЕЗОПАСНО (не найдёт якорь, или найдёт
 # его больше одного раза -- см. её же анти-неоднозначность фикс от
@@ -111,8 +111,8 @@ _PROFILE_TARGETS_DEFAULTS = {
 
 
 def _load_profile_targets() -> dict:
-    """Дефолты выше сверены ТОЛЬКО с одним конкретным сервером (NETH-4) --
-    жёстко их использовать на любом новом провайдере (МТС и далее) без
+    """Дефолты выше сверены ТОЛЬКО с одним конкретным сервером (Server A) --
+    жёстко их использовать на любом новом провайдере (Provider B и далее) без
     возможности переопределить means либо совпадение (повезло), либо
     безопасный отказ promote_apply_cli.sh (см. её же анти-неоднозначность
     и якорь-не-найден проверки), но НЕ автопродвижение. Если рядом с этим
@@ -121,7 +121,7 @@ def _load_profile_targets() -> dict:
     перечисленных там профилей, формат:
       {"RKN_TLS": {"kind": "template", "value": "имя_шаблона"},
        "DS_TLS": {"kind": "header", "value": ["строка1", "строка2", ...]}}
-    Найдено при аудите перед деплоем на МТС 2026-08-17 -- раньше не было
+    Найдено при аудите перед деплоем на Provider B 2026-08-17 -- раньше не было
     способа адаптировать эти значения под другой сервер без правки кода."""
     targets = dict(_PROFILE_TARGETS_DEFAULTS)
     override_file = os.path.join(
@@ -136,7 +136,7 @@ def _load_profile_targets() -> dict:
                 targets[profile] = (spec["kind"], spec["value"])
             print(f"PROFILE_TARGETS: применены переопределения из {override_file}", file=sys.stderr)
         except (OSError, ValueError, KeyError) as e:
-            print(f"PROFILE_TARGETS: не удалось прочитать {override_file}: {e} -- использую дефолты, сверенные на NETH-4 (могут не подойти этому серверу)", file=sys.stderr)
+            print(f"PROFILE_TARGETS: не удалось прочитать {override_file}: {e} -- использую дефолты, сверенные на Server A (могут не подойти этому серверу)", file=sys.stderr)
     return targets
 
 
@@ -228,7 +228,7 @@ def _claim_promotable(conn, profile: str, environment_id: int, min_pulls: int):
     только на сам SELECT+UPDATE, не на всю долгую apply+restart+verify
     цепочку -- иначе параллельный try_promote() для ДРУГОГО
     профиля/генома простаивал бы без причины. Найдено при аудите перед
-    деплоем на МТС 2026-08-17 -- файловая гонка на самом config.py уже
+    деплоем на Provider B 2026-08-17 -- файловая гонка на самом config.py уже
     закрыта flock'ом в promote_apply_cli.sh, эта -- на уровне БД,
     отдельная и до него."""
     cur = conn.cursor(dictionary=True)
@@ -286,7 +286,7 @@ def _rollback(conn, profile: str, num: int, proto: str, backup_path: str, old_lo
     безусловно писал "strategy вернута на {old_locked}", даже если сам
     _set_strategy() был пропущен (old_locked пуст/не число) или его код
     возврата вообще не проверялся -- найдено при аудите перед деплоем на
-    МТС 2026-08-17."""
+    Provider B 2026-08-17."""
     _release_claim(conn, genome_id, environment_id)
     if not backup_path:
         return f"{profile}: ОТКАТ НЕВОЗМОЖЕН -- путь к backup не распознан из вывода apply. Нужно вмешательство человека."
@@ -330,7 +330,7 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
         # раньше необработанное исключение (напр. subprocess.TimeoutExpired
         # из зависшего restart/promote_apply_cli.sh) вылетало прямо из
         # try_promote(), пропуская _rollback() целиком и оставляя claim
-        # висеть навечно -- найдено при аудите перед деплоем на МТС
+        # висеть навечно -- найдено при аудите перед деплоем на Provider B
         # 2026-08-17.
         try:
             current_max = _max_strategy(num)
@@ -362,7 +362,7 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
             # подключившийся в этом окне к ещё СТАРОМУ процессу (который не знает
             # про новый strategy=N, только что дописанный в файл), тихо откатится на
             # strategy=1 (живой инцидент 2026-08-07, тот же паттерн, что уже раз
-            # ломал прод -- найдено при аудите перед деплоем на МТС 2026-08-17,
+            # ломал прод -- найдено при аудите перед деплоем на Provider B 2026-08-17,
             # исправлено до первого реального срабатывания).
             if not _restart_zapret2() or not _set_strategy(num, proto, strategy_n):
                 return _rollback(conn, profile, num, proto, backup_path, old_locked, candidate["id"], env_id)

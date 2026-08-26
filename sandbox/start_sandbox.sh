@@ -21,7 +21,7 @@ TEMPLATE="$SCRIPT_DIR/nfqws2_sandbox.conf.template"
 LIVE_CONF="$SCRIPT_DIR/nfqws2_sandbox.conf"
 PIDFILE="$SCRIPT_DIR/nfqws2_sandbox.pid"
 
-# Живой случай на miha (МТС) 2026-08-26: шаблон раньше хардкодил
+# Живой случай на Server B (Provider B) 2026-08-26: шаблон раньше хардкодил
 # /opt/zapret2/files/fake/... для всех --blob= (см. CLAUDE.md
 # z2r_autobench "/opt/zapret2 vs /opt/zator" -- files/ не обязательно
 # живёт под /opt/zapret2 на штатной раскладке апстрим-установщика).
@@ -29,7 +29,7 @@ PIDFILE="$SCRIPT_DIR/nfqws2_sandbox.pid"
 # самом старте песочницы. Определяем реальную базу так же, как
 # z2r_autobench_lib.sh::_z2r_detect_base(), а не хардкодим вторую догадку.
 #
-# ВАЖНО: проверяем не просто "директория существует" -- на miha
+# ВАЖНО: проверяем не просто "директория существует" -- на Server B
 # /opt/zapret2/files/fake существовала как ПУСТАЯ (или неполная)
 # директория, первая же проверка `[ -d ... ]` проходила, и FAKE_DIR
 # резолвился туда же, где нужного файла всё равно нет (первый заход на

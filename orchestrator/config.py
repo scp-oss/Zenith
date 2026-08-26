@@ -39,7 +39,7 @@ SANDBOX_USER = os.environ.get("SANDBOX_USER", "zenith-sandbox")
 # bootstrap.py, sync_client.py, compare_control.py, promote.py) -- раньше
 # был захардкожен буквально как "prod-domru"/"domru" в каждом argparse,
 # так что на ноде другого провайдера ЛЕГКО забыть передать флаги явно --
-# и данные молча запишутся под именем "домру", хотя это уже другая нода.
+# и данные молча запишутся под именем "Provider A", хотя это уже другая нода.
 # Теперь дефолт читается из .env (той же переменной, что видит панель) --
 # один раз выставил ZENITH_ENVIRONMENT_NAME/PROVIDER на конкретной ноде,
 # дальше можно просто не думать про эти флаги на каждый запуск.
@@ -49,11 +49,11 @@ LOCAL_ENVIRONMENT_PROVIDER = os.environ.get("ZENITH_ENVIRONMENT_PROVIDER", _ENV.
 
 if LOCAL_ENVIRONMENT_NAME_IS_DEFAULT:
     # Громкое предупреждение, не тихий дефолт -- забытый на новом сервере
-    # (напр. МТС) ZENITH_ENVIRONMENT_NAME означает, что ЛЮБОЙ прогон molча
+    # (напр. Provider B) ZENITH_ENVIRONMENT_NAME означает, что ЛЮБОЙ прогон molча
     # запишет/прочитает результаты под тем же environment_id, что и
-    # реальный боевой домру -- смешивая UCB-статистику и, что хуже,
+    # реальный боевой Provider A -- смешивая UCB-статистику и, что хуже,
     # пул кандидатов для автопродвижения (auto_promoter.py) между
-    # СОВЕРШЕННО разными сетями. Найдено при аудите перед деплоем на МТС
+    # СОВЕРШЕННО разными сетями. Найдено при аудите перед деплоем на Provider B
     # 2026-08-17. Печатается при каждом импорте -- намеренно, дешёвая
     # разовая проверка, не спам (см. CLAUDE.md z2r_autobench "Publishing
     # hygiene" -- сюда сервер по имени/провайдеру НЕ попадает, только сам
@@ -84,7 +84,7 @@ PROMOTE_BACKUP_DIR = os.environ.get("PROMOTE_BACKUP_DIR", _ENV.get("PROMOTE_BACK
 
 
 def _detect_z2r_base():
-    # Живой случай на miha (МТС) 2026-08-26, тот же класс бага, что уже
+    # Живой случай на Server B (Provider B) 2026-08-26, тот же класс бага, что уже
     # документирован в z2r_autobench/CLAUDE.md "/opt/zapret2 vs
     # /opt/zator": genome.py::PROFILE_FILTERS хардкодил
     # /opt/zapret2/extra_strats/TCP_*.txt, а на штатной раскладке
@@ -92,7 +92,7 @@ def _detect_z2r_base():
     # каждый геном в песочнице падал с "cannot access hostlist file", все
     # 20 раундов подряд, для каждого TCP-профиля. Пробуем КОНКРЕТНЫЙ файл,
     # а не просто "директория существует" -- урок того же дня из
-    # sandbox/start_sandbox.sh (FAKE_DIR): на miha /opt/zapret2/extra_strats
+    # sandbox/start_sandbox.sh (FAKE_DIR): на Server B /opt/zapret2/extra_strats
     # может существовать как пустая/неполная директория и пройти `-d`
     # проверку, не имея нужного файла внутри.
     probe = "extra_strats/TCP_YT_list.txt"
