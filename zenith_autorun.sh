@@ -83,13 +83,31 @@ while true; do
   profile="${PROFILES[$((idx % ${#PROFILES[@]}))]}"
   idx=$((idx + 1))
   echo "[$(date -Iseconds)] запускаю $profile, $ROUNDS раундов"
-  ( cd "$ZENITH_DIR/orchestrator" && "$VENV_PYTHON" main.py --profile "$profile" --rounds "$ROUNDS" )
+  # Живой случай на miha 2026-08-26: main.py падал с необработанным
+  # исключением на самом первом раунде (см. sandbox_apply.py -- отсутствие
+  # nfqws2_sandbox.conf), но этот код НЕ проверялся -- ниже безусловно
+  # печаталось "$profile завершён", как будто все $ROUNDS раундов честно
+  # прошли. Итог: TCP-профили падали на seed-геноме КАЖДЫЙ цикл несколько
+  # дней подряд, ничего не писалось в локальную БД, а лог выглядел так,
+  # будто всё в порядке -- никто не заметил бы без явной проверки кода
+  # возврата.
+  if ( cd "$ZENITH_DIR/orchestrator" && "$VENV_PYTHON" main.py --profile "$profile" --rounds "$ROUNDS" ); then
+    main_ok=1
+  else
+    main_rc=$?
+    main_ok=0
+    echo "[$(date -Iseconds)] !!! main.py для $profile упал (код возврата $main_rc) -- раунды могли не завершиться, локальных прогонов могло не прибавиться. См. вывод выше." >&2
+  fi
   if [ "$SYNC_ENABLED" = "1" ]; then
     echo "[$(date -Iseconds)] синкаю $profile с панелью..."
     if ! ( cd "$ZENITH_DIR/orchestrator" && "$VENV_PYTHON" sync_client.py push --profile "$profile" ); then
       echo "[$(date -Iseconds)] sync_client.py push для $profile не удался -- см. вывод выше, панель ноду тут не увидит до следующего успешного синка." >&2
     fi
   fi
-  echo "[$(date -Iseconds)] $profile завершён, следующий через ${INTERVAL_MINUTES}м"
+  if [ "$main_ok" = "1" ]; then
+    echo "[$(date -Iseconds)] $profile завершён, следующий через ${INTERVAL_MINUTES}м"
+  else
+    echo "[$(date -Iseconds)] $profile упал (см. предупреждение выше), следующий через ${INTERVAL_MINUTES}м"
+  fi
   sleep "$((INTERVAL_MINUTES * 60))"
 done
