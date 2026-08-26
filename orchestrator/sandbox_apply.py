@@ -17,6 +17,16 @@ _REWRITE_PREFIXES = (
     "--payload=", "--lua-desync=",
 )
 
+# Живой случай на miha (МТС) 2026-08-26: apply_raw() возвращал только bool,
+# а все вызывающие (main.py и т.д.) на "не удалось" печатали один и тот же
+# универсальный текст без деталей -- реальный stderr от финального
+# start_sandbox.sh (там, где nfqws2 фактически не поднялся) нигде не
+# показывался, и 20 раундов подряд диагноз был "start_sandbox.sh вернул
+# ошибку" без единого намёка, ПОЧЕМУ. Не меняем сигнатуру apply_raw() (её
+# уже вызывают как bool в трёх местах) -- вместо этого кладём подробности
+# сюда, чтобы вызывающий код мог сам решить, показывать их или нет.
+LAST_ERROR = ""
+
 
 def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
     """Применяет произвольный набор строк (фильтр + один или несколько
@@ -75,10 +85,12 @@ def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
     with open(CONF_PATH, "w") as f:
         f.writelines(kept)
 
+    global LAST_ERROR
     result = subprocess.run(
         [f"{config.SANDBOX_DIR}/start_sandbox.sh"],
         capture_output=True, text=True, timeout=15,
     )
+    LAST_ERROR = "" if result.returncode == 0 else (result.stderr.strip() or result.stdout.strip())
     return result.returncode == 0
 
 

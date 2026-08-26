@@ -38,7 +38,8 @@ SETTLE_SECONDS = 3
 def measure(conn, env_id: int, gid: str, filter_lines: list, lua_lines: list, domains: list, trials_per_domain: int, profile: str) -> dict:
     if profile != "VOICE_UDP":
         if not sandbox_apply.apply_raw(filter_lines, lua_lines):
-            print("  не удалось применить в песочнице", file=sys.stderr)
+            detail = f": {sandbox_apply.LAST_ERROR}" if sandbox_apply.LAST_ERROR else ""
+            print(f"  не удалось применить в песочнице{detail}", file=sys.stderr)
             return {}
         time.sleep(SETTLE_SECONDS)
 

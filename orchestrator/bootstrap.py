@@ -75,7 +75,8 @@ def run(profile: str, environment_name: str, provider: str, min_pulls: int, limi
                 success, bytes_, latency_ms = voice_tester.probe([g.render_args()])
             else:
                 if not sandbox_apply.apply_genome(g):
-                    print("    не удалось применить в песочнице, пропуск кандидата", file=sys.stderr)
+                    detail = f": {sandbox_apply.LAST_ERROR}" if sandbox_apply.LAST_ERROR else ""
+                    print(f"    не удалось применить в песочнице{detail}, пропуск кандидата", file=sys.stderr)
                     break
                 time.sleep(SETTLE_SECONDS)
                 success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])

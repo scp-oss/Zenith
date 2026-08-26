@@ -118,7 +118,8 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
         success, bytes_, latency_ms = voice_tester.probe(control)
     else:
         if not sandbox_apply.apply_raw(genome_mod.PROFILE_FILTERS[profile], control):
-            print("  не удалось применить control в песочнице", file=sys.stderr)
+            detail = f": {sandbox_apply.LAST_ERROR}" if sandbox_apply.LAST_ERROR else ""
+            print(f"  не удалось применить control в песочнице{detail}", file=sys.stderr)
             return False
         time.sleep(BASE_SETTLE_SECONDS)
         success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
@@ -184,7 +185,8 @@ def run(profile: str, rounds: int, environment_name: str, provider: str, domain_
                 print(f"  {e}", file=sys.stderr)
                 return 1
             if not applied:
-                print("  не удалось применить в песочнице (start_sandbox.sh вернул ошибку), пропуск", file=sys.stderr)
+                detail = f": {sandbox_apply.LAST_ERROR}" if sandbox_apply.LAST_ERROR else ""
+                print(f"  не удалось применить в песочнице (start_sandbox.sh вернул ошибку){detail}, пропуск", file=sys.stderr)
                 continue
 
             time.sleep(settle)
