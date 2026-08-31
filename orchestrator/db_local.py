@@ -55,9 +55,12 @@ def get_domains_for_profile(conn, profile: str):
 
 def get_or_create_domain(conn, host: str, path: str, profile: str, min_bytes: int) -> dict:
     """Для main.py --domain -- разовый кастомный домен, не обязательно уже
-    сидящий в domain_pool. UNIQUE KEY (host, path) в схеме -- ON DUPLICATE
-    просто оставляет запись как есть (не перетирает profile_hint/min_bytes
-    у уже существующей ручной записи чужого профиля тем же host/path)."""
+    сидящий в domain_pool. UNIQUE KEY (profile_hint, host, path) в схеме
+    (см. migrations/006_domain_pool_unique_per_profile.sql -- раньше было
+    (host, path) БЕЗ profile_hint, из-за чего один и тот же домен под
+    другим профилем никогда не заводился отдельной строкой) -- ON
+    DUPLICATE оставляет запись как есть только в рамках ОДНОГО профиля,
+    тот же host/path под другим profile создаёт свою независимую строку."""
     cur = conn.cursor()
     cur.execute(
         """INSERT INTO domain_pool (host, path, profile_hint, min_bytes)

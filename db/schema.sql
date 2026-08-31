@@ -83,7 +83,12 @@ CREATE TABLE domain_pool (
     consecutive_fail   INT NOT NULL DEFAULT 0,
     quarantined_until  TIMESTAMP NULL,
     added_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_host_path (host, path)
+    -- Уникальность per-профилю, НЕ глобально (см.
+    -- migrations/006_domain_pool_unique_per_profile.sql для полной
+    -- истории) -- один и тот же host/path законно должен независимо
+    -- существовать под несколькими профилями сразу (напр. www.youtube.com
+    -- одновременно в списках YT_TLS и YT_QUIC_UDP).
+    UNIQUE KEY uniq_profile_host_path (profile_hint, host, path)
 );
 
 -- Стартовые домены — те же самые, что уже использует z2r_autobench
