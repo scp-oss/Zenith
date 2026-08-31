@@ -396,6 +396,15 @@ sudo venv/bin/python3 compare_control.py --profile YT_TLS --trials 5
 # генома (сам НИЧЕГО не применяет — только печатает, что вставить и
 # выполнить руками):
 sudo venv/bin/python3 promote.py --profile YT_TLS --after-strategy 42
+
+# перебор decoy-домена (host= у hostfakesplit) в песочнице — см.
+# host_tune.py докстринг: варьирует ТОЛЬКО host=, остальные параметры
+# (disorder_after/fooling/repeats) фиксированы явно, чтобы сравнение
+# было честным. Кандидаты — из внешнего файла (напр. официальный "белый
+# список" доменов, которые DPI обязан не блокировать никогда):
+sudo venv/bin/python3 host_tune.py --profile YT_TLS \
+    --candidates-file /path/to/whitelist.txt --limit 20 \
+    --disorder-after --repeats 2
 ```
 
 `main.py` пишет root'ом (нужен для песочницы и `sudo -u zenith-sandbox`) —
