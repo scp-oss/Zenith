@@ -17,7 +17,7 @@
 #   ZENITH_AUTORUN_INTERVAL_MINUTES=240
 #   ZENITH_AUTORUN_ROUNDS=20
 # Какие профили перебирать -- через .env (ZENITH_PROFILES=YT_TLS,DS_TLS),
-# не через окружение -- см. z0r 22 -> 4 -> "профили".
+# не через окружение -- см. z0r 21 -> 4 -> "профили".
 #
 # Запуск (напрямую, для отладки):
 #   ZENITH_DIR=/opt/z2r_autobench/Zenith bash zenith_autorun.sh
