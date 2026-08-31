@@ -170,6 +170,44 @@ def _zapret2_running() -> bool:
     return out.returncode == 0 and "SubState=running" in out.stdout
 
 
+# Известная дыра, закрыта 2026-08-31: живая проверка ниже
+# (_real_traffic_check) до сих пор curl'ила ТОЛЬКО домены из domain_pool
+# (обычно один статический URL вроде www.youtube.com) -- та же самая
+# уязвимость, что уже была найдена и закрыта в z2r_autobench
+# (PROFILE_EXTRA_URL/extra_check_ok, см. его CLAUDE.md "Test domains":
+# "site 'worked' by every test the tooling ran; the app didn't load for
+# any real user"). Здесь, в автопродвижении, эту защиту так и не
+# добавили -- живой инцидент: zenith-promoter продвигал новый strategy=
+# для YT_TLS примерно раз в 16ч (66 -> 27 авг, 67 -> 30 авг), НИ РАЗУ не
+# проверяя youtubei.googleapis.com (InnerTube API, от которого зависит
+# ЛЮБОЙ реальный клиент, включая мобильные/TV-приложения, не только
+# браузер) -- геном мог пройти живую проверку по www.youtube.com и всё
+# равно сломать реальный YouTube (обнаружено через жалобу "YouTube не
+# грузится на WebOS через WireGuard", стратегия менялась под
+# пользователем без предупреждения).
+PROFILE_EXTRA_URL = {
+    "YT_TLS": "https://youtubei.googleapis.com/",
+}
+
+
+def _probe_reachable(url: str, timeout: int = 8) -> bool:
+    """Только "не 000" (реальный HTTP-код ЛЮБОЙ, не обрыв/таймаут) -- НЕ
+    порог байт, как у _probe_real(). InnerTube API отвечает небольшим
+    JSON, MIN_BYTES_THRESHOLD-подобный порог тут дал бы ложный провал.
+    Тот же принцип, что probe_reachable()/extra_check_ok() в
+    z2r_autobench_lib.sh."""
+    try:
+        out = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             "--connect-timeout", "5", "--max-time", str(timeout), url],
+            capture_output=True, text=True, timeout=timeout + 3,
+        )
+        code = (out.stdout or "").strip()
+    except Exception:
+        return False
+    return code.isdigit() and code != "000"
+
+
 def _probe_real(host: str, path: str, min_bytes: int, timeout: int = 8) -> tuple:
     """curl БЕЗ sudo -u <sandbox-юзер> -- обычный процесс, обычный
     маршрут через боевой zapret2, то же самое, что видит любой реальный
@@ -209,7 +247,18 @@ def _real_traffic_check(conn, profile: str) -> tuple:
         ok, bytes_ = _probe_real(d["host"], d["path"], d["min_bytes"])
         if not ok:
             return False, f"{d['host']}{d['path']}: {bytes_} байт (нужно {d['min_bytes']}+)"
-    return True, f"{len(domains)} домен(ов) прошли живую проверку"
+
+    extra_url = PROFILE_EXTRA_URL.get(profile)
+    if extra_url and not _probe_reachable(extra_url):
+        return False, (
+            f"{extra_url}: недоступен (доп. проверка PROFILE_EXTRA_URL) -- "
+            f"domain_pool-домены прошли, но это именно тот класс ложного "
+            f"успеха, из-за которого сайт 'работает', а реальный клиент (в "
+            f"т.ч. мобильные/TV-приложения) -- нет"
+        )
+
+    extra_note = f" + {extra_url} доступен" if extra_url else ""
+    return True, f"{len(domains)} домен(ов) прошли живую проверку{extra_note}"
 
 
 def _claim_promotable(conn, profile: str, environment_id: int, min_pulls: int):
