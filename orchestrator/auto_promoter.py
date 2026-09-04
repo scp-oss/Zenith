@@ -89,12 +89,24 @@ PROMOTE_APPLY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/promote_apply_cli.sh"
 #   ("header", [строки]) -- профиль самодостаточен, strategy=N лежат
 #     прямо в его собственном блоке сразу после этих строк заголовка
 #     (точное посимвольное совпадение, по порядку).
+# Хардкод /opt/zapret2/... ниже (DS_TLS/VOICE_UDP) был тем же классом
+# бага, что уже пять раз находили и чинили в genome.py::PROFILE_FILTERS/
+# sandbox/nfqws2_sandbox.conf.template/sandbox_apply.py -- см.
+# z2r_autobench/CLAUDE.md "/opt/zapret2 vs /opt/zator". Найден здесь,
+# в ШЕСТОЙ раз, 2026-09-04 на Server NETH-4 (свежий "Server A"-профиль
+# сверки от 2026-08-16 никогда не обновлялся под split-base серверы):
+# `promote_apply_cli.sh` искал ЭТУ буквальную строку в живом конфиге,
+# который на деле содержит `/opt/zator/extra_strats/TCP_Discord.txt`
+# (тот же файл, другая база) -- "Заголовок блока не найден" на КАЖДОМ
+# цикле auto_promoter.py для DS_TLS, без единого успешного продвижения,
+# минимум с 2026-08-27. `config.Z2R_BASE` уже решает ровно эту проблему
+# для genome.py -- используем его и здесь, тем же f-string идиомом.
 _PROFILE_TARGETS_DEFAULTS = {
     "YT_TLS": ("template", "z2r_tcp_tls_common"),
     "RKN_TLS": ("template", "z2r_tcp_tls_common"),
     "DS_TLS": ("header", [
-        "--filter-tcp=80,443,2053,2083,2087,2096,8443 --hostlist=/opt/zapret2/extra_strats/TCP_Discord.txt",
-        "--hostlist-exclude=/opt/zapret2/lists/netrogat.txt",
+        f"--filter-tcp=80,443,2053,2083,2087,2096,8443 --hostlist={config.Z2R_BASE}/extra_strats/TCP_Discord.txt",
+        f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
         "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
         "--out-range=-s34228",
         "--in-range=-s32768 --lua-desync=circular_locked:key=4",
@@ -104,7 +116,7 @@ _PROFILE_TARGETS_DEFAULTS = {
     "VOICE_UDP": ("header", [
         "--filter-udp=443,2053,2083,2087,2096,8443,50000-50099,1400,3478-3481,5349,19294-19344",
         "--filter-l7=discord,stun",
-        "--lua-desync=circular_locked:key=6:proto=udp:allow_nohost=1:exclude_hostlist=/opt/zapret2/lists/netrogat.txt",
+        f"--lua-desync=circular_locked:key=6:proto=udp:allow_nohost=1:exclude_hostlist={config.Z2R_BASE}/lists/netrogat.txt",
         "--payload=discord_ip_discovery,stun",
     ]),
 }
