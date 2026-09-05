@@ -53,6 +53,24 @@ fi
 [ -f "$QUEUE_FILE" ] || { echo "Нет $QUEUE_FILE — сначала запусти setup_sandbox.sh." >&2; exit 1; }
 [ -x "$NFQWS2_BIN" ] || { echo "$NFQWS2_BIN не найден — z2r/zapret2 установлен?" >&2; exit 1; }
 
+# nfqws2 запускается от nobody (см. комментарий у runuser ниже) -- ему
+# нужны cap_net_admin/cap_net_raw/cap_setpcap на РЕАЛЬНОМ файле (не на
+# символьной ссылке $NFQWS2_BIN, setcap на симлинк не работает).
+# Применяется БЕЗУСЛОВНО на каждый запуск (тот же idempotent-паттерн, что
+# ensure_wsrelay_user()/ensure_panel_runtime_grants() в z0r) -- любая
+# переустановка/апдейт z2r/zapret2 кладёт новый файл на это место, и
+# старый setcap-грант вместе со старым файлом пропадает молча, без
+# всякой ошибки при следующем запуске песочницы, кроме самого
+# `nfq_create_queue(): Operation not permitted`.
+_real_nfqws2_bin="$(readlink -f "$NFQWS2_BIN")"
+if command -v setcap >/dev/null 2>&1; then
+  if ! _setcap_err="$(setcap cap_net_admin,cap_net_raw,cap_setpcap+eip "$_real_nfqws2_bin" 2>&1)"; then
+    echo "!!! setcap на $_real_nfqws2_bin не удался: $_setcap_err -- песочница от nobody не сможет забиндить NFQUEUE." >&2
+  fi
+else
+  echo "!!! Пакет libcap2-bin (команда setcap) не установлен -- 'apt-get install -y libcap2-bin', иначе песочница от nobody не сможет забиндить NFQUEUE." >&2
+fi
+
 qnum="$(cat "$QUEUE_FILE")"
 
 # Живой конфиг генерим из шаблона только если его ещё нет — если он уже
@@ -65,26 +83,35 @@ fi
 
 "$SCRIPT_DIR/stop_sandbox.sh" 2>/dev/null || true
 
-# nfqws2 запускается СРАЗУ от имени nobody (runuser, а не root + nfqws2's
-# собственный --user=nobody внутри себя, который раньше был в шаблоне).
-# Живой баг, найденный при диагностике VOICE_UDP-песочницы: файловые
-# capabilities (`setcap cap_net_admin,cap_net_raw+eip` на реальный бинарник,
-# см. CLAUDE.md/README для точной команды) применяются ТОЛЬКО в момент
-# execve() и зависят от того, executable запускается или нет -- не от
-# текущего uid процесса. Когда root напрямую запускал nfqws2, тот
-# унаследовал полный набор capabilities как root (это ожидаемо и не
-# зависит от setcap вообще), а затем сам вызывал setuid(nobody) через
-# собственный --user=nobody -- а syscall setuid() с ИЗМЕНЕНИЕМ uid с 0 на
-# ненулевой по умолчанию ОБНУЛЯЕТ effective/permitted/inheritable
-# capability sets процесса (если только сам процесс заранее не выставил
-# PR_SET_KEEPCAPS и не восстановил их через capset() -- похоже, что
-# nfqws2 этого не делает, или делает это до того, как реально биндит
-# NFQUEUE). Результат — `nfq_create_queue(): Operation not permitted`
-# именно на этапе после дропа привилегий, сколько setcap на файл ни
-# применяй, пока exec идёт от root. Fix: запускаем nfqws2 сразу от
-# nobody (runuser, execve() -> capability transition берёт F(permitted)
-# файла напрямую, не завися от текущих capabilities вызывающего
-# процесса), внутренний drop больше не нужен и убран из шаблона.
+# nfqws2 запускается СРАЗУ от имени nobody через runuser, не как root с
+# собственным --user=nobody внутри себя (убран из шаблона). Живая
+# диагностика VOICE_UDP-песочницы (strace, см. историю коммитов) нашла
+# три независимых слоя одной и той же ошибки
+# `nfq_create_queue(): Operation not permitted`:
+#  1) nfqws2 БЕЗУСЛОВНО дропает себя до uid/gid 65534 при старте,
+#     независимо от того, передан ли --user= в конфиге вообще -- если
+#     стартовать его как root, он сам НЕОБРАТИМО падает до nobody ПОСЛЕ
+#     захвата capabilities, но ДО реального создания очереди, так что
+#     любой setcap на файле бесполезен, пока exec идёт от root: capset()
+#     работает только внутри уже имеющегося набора, а root-эффект setcap
+#     не даёт (root и так имеет все capabilities без всякого setcap).
+#     Fix: exec сразу от nobody (см. runuser ниже) -- тогда файловые
+#     capabilities реально применяются в момент execve().
+#  2) Свой ПЕРВЫЙ (основной) внутренний capset() nfqws2 просит СРАЗУ
+#     cap_setpcap+cap_net_admin+cap_net_raw (видимо чтобы потом самому
+#     подрезать себе bounding set) -- без cap_setpcap в файловом гранте
+#     этот capset падает с EPERM, nfqws2 уходит в упрощённый fallback,
+#     который на практике НЕ оставляет процесс в рабочем для
+#     nfq_create_queue() состоянии. Fix: setcap выше включает cap_setpcap
+#     тоже, не только net_admin/net_raw.
+#  3) Даже с (1)+(2) исправленными ошибка может остаться, если номер
+#     очереди уже занят -- в т.ч. осиротевшим/незамеченным ПРЕДЫДУЩИМ
+#     nfqws2-процессом песочницы (напр. после сбойного запуска, который
+#     start_sandbox.sh посчитал неудачным из-за гонки с pidfile, а сам
+#     nfqws2 на деле поднялся и продолжает жить, PPID=1). Ядро отвечает
+#     на повторный bind именно EPERM, а не EBUSY -- проверяется через
+#     `cat /proc/net/netfilter/nfnetlink_queue`. См. усиленную очистку в
+#     stop_sandbox.sh ниже.
 runuser -u nobody -- "$NFQWS2_BIN" "@$LIVE_CONF"
 sleep 1
 
