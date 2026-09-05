@@ -4,8 +4,9 @@
 
 set -uo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PIDFILE="$SCRIPT_DIR/nfqws2_sandbox.pid"
+# /tmp, не sandbox/ -- см. одноимённый комментарий в start_sandbox.sh
+# (nfqws2 теперь запускается от nobody через runuser, пишет pidfile сам).
+PIDFILE="/tmp/zenith_nfqws2_sandbox.pid"
 
 if [ ! -f "$PIDFILE" ]; then
   echo "Нет $PIDFILE — песочница не запущена (или уже остановлена)."

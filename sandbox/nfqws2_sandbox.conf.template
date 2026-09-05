@@ -1,6 +1,6 @@
 --qnum=__QNUM__
 --daemon
---pidfile=__ZENITH_DIR__/sandbox/nfqws2_sandbox.pid
+--pidfile=/tmp/zenith_nfqws2_sandbox.pid
 --debug=@__ZENITH_DIR__/sandbox/nfqws2_sandbox.debug.log
 --lua-init=@/opt/zapret2/lua/zapret-lib.lua
 --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua

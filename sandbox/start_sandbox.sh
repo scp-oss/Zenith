@@ -19,7 +19,12 @@ NFQWS2_BIN="/opt/zapret2/nfq2/nfqws2"
 QUEUE_FILE="$SCRIPT_DIR/queue_num"
 TEMPLATE="$SCRIPT_DIR/nfqws2_sandbox.conf.template"
 LIVE_CONF="$SCRIPT_DIR/nfqws2_sandbox.conf"
-PIDFILE="$SCRIPT_DIR/nfqws2_sandbox.pid"
+# /tmp, не sandbox/ -- nfqws2 теперь запускается сразу от nobody (см.
+# комментарий у runuser ниже), а sandbox/ обычно root:root без права
+# записи для nobody на СОЗДАНИЕ нового файла (в отличие от дозаписи в
+# уже существующий debug.log). /tmp с sticky-битом даёт nobody создать
+# свой pidfile, не давая другим его тронуть.
+PIDFILE="/tmp/zenith_nfqws2_sandbox.pid"
 
 # Живой случай на Server B (Provider B) 2026-08-26: шаблон раньше хардкодил
 # /opt/zapret2/files/fake/... для всех --blob= (см. CLAUDE.md
