@@ -264,7 +264,10 @@ z2r_autobench's/z0r-panel's own CLAUDE.md. `Server A`/`Server B`/etc. and
   (default) means "inherit `ZENITH_PROFILES` wholesale" — the exact
   prior behavior — so a server that's never touched this new setting
   keeps working identically; this is additive, not a breaking change.
-- Set via z0r item `18 -> 2` ("Профили для продвижения") — item 18
+- Set via z0r item `18 -> 2` ("Профили для продвижения") — renumbered to
+  item `27 -> 2` later the same day when 9 new per-profile items were
+  inserted at 16-24 (see z2r_autobench's own CLAUDE.md "z0r main menu
+  renumbering (2026-09-05)" for the full mapping) — item 18/27
   (previously a single-shot toggle with no menu at all) is now a real
   submenu: `1` toggle on/off (same `zenith_promoter_toggle()` as before),
   `2` this profile selector, `3` log tail. Item `21 -> 4 -> 5`

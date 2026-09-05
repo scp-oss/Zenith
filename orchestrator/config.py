@@ -108,7 +108,8 @@ Z2R_BASE = os.environ.get("Z2R_BASE", _ENV.get("Z2R_BASE", _detect_z2r_base()))
 # Какие профили трогает ГЕНЕРАЦИЯ (zenith_autorun.sh) -- запятая без
 # пробелов, напр. "YT_TLS,DS_TLS". Пусто (дефолт) = все 4 профиля с
 # проверенным PROFILE_TARGETS (см. auto_promoter.py). Ставится через z0r
-# (пункт 21 -> 4 -> 5 "Профили"), не руками -- меню само проверяет
+# (пункт 30 -> 4 -> 5 "Профили", был 21 до 2026-09-05, см.
+# z2r_autobench/CLAUDE.md), не руками -- меню само проверяет
 # имена и пишет сюда же в .env. zenith_autorun.sh читает эту же
 # переменную напрямую из .env (bash-скрипт, config.py не сорсит).
 #
@@ -125,5 +126,6 @@ ZENITH_PROFILES = os.environ.get("ZENITH_PROFILES", _ENV.get("ZENITH_PROFILES", 
 # независимо от ZENITH_PROFILES выше. Пусто (дефолт) = наследует
 # ZENITH_PROFILES целиком (обратная совместимость -- сервер, который
 # никогда не трогал этот новый выбор, продолжает вести себя ровно как
-# раньше). Ставится через z0r (пункт 18 -> 2 "Профили для продвижения").
+# раньше). Ставится через z0r (пункт 27 -> 2 "Профили для продвижения",
+# был 18 до 2026-09-05, см. z2r_autobench/CLAUDE.md).
 ZENITH_PROMOTE_PROFILES = os.environ.get("ZENITH_PROMOTE_PROFILES", _ENV.get("ZENITH_PROMOTE_PROFILES", ""))
