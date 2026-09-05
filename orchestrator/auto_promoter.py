@@ -16,7 +16,13 @@ systemd-юнитом zenith-promoter.service, который запускает 
   1. Критерий выбора -- ТОТ ЖЕ, что promote.py::pick_best() (100% успехов,
      --min-pulls прогонов, лучший avg_score), только дополнительно
      пропускает уже продвинутые геномы (genome_scores.promoted_strategy
-     IS NOT NULL).
+     IS NOT NULL). С 2026-09-05 -- ЕЩЁ и требует, чтобы avg_score
+     кандидата был СТРОГО лучше avg_score текущей живой strategy=N (см.
+     _get_champion_score()/CLAUDE.md "require a genuine improvement") --
+     иначе на плато (новые геномы стабильно дотягивают до порога, но не
+     превосходят уже живой) продвижение повторялось бы вхолостую на
+     каждом цикле ради равноценной/худшей замены, тратя реальный риск
+     живой проверки без всякой пользы.
   2. Новый strategy=N блок пишется через z2r_autobench/promote_apply_cli.sh
      (узкий, самопроверяющий скрипт -- см. её докстринг: блок находит
      СТРОГО по точному совпадению заголовка ИЛИ по имени общего шаблона
@@ -318,6 +324,36 @@ def _claim_promotable(conn, profile: str, environment_id: int, min_pulls: int):
     return row
 
 
+def _get_champion_score(conn, profile: str, environment_id: int, strategy_n: str | None):
+    """genome_scores-строка генома, который реально сейчас продвинут И
+    совпадает с ЖИВОЙ strategy=N (strategy_n из _get_strategy()) -- с
+    чем сравнивать нового кандидата в try_promote(), прежде чем его
+    продвигать. Раньше такого сравнения не было вообще: _claim_promotable()
+    видит только НЕпродвинутые геномы, так что любой новый кандидат,
+    набравший --min-pulls прогонов со 100% успехом, продвигался
+    безусловно -- даже если он не лучше (или хуже) уже живой стратегии,
+    просто потому что сам факт "уже продвинут" делает старого чемпиона
+    невидимым для этого запроса. См. CLAUDE.md "require a genuine
+    improvement" для полного разбора.
+
+    Возвращает None, если strategy_n не число (стратегия не читается)
+    или если для неё вообще нет строки с таким promoted_strategy --
+    в обоих случаях сравнивать не с чем, и try_promote() ведёт себя как
+    раньше (продвигает первого подходящего кандидата)."""
+    if not strategy_n or not strategy_n.isdigit():
+        return None
+    cur = conn.cursor(dictionary=True)
+    cur.execute(
+        """SELECT gs.genome_id, gs.pulls, gs.successes,
+                  ROUND(gs.total_reward / NULLIF(gs.pulls, 0), 3) AS avg_score
+           FROM genome_scores gs
+           JOIN genomes g ON g.id = gs.genome_id AND g.profile = %s
+           WHERE gs.environment_id = %s AND gs.promoted_strategy = %s""",
+        (profile, environment_id, int(strategy_n)),
+    )
+    return cur.fetchone()
+
+
 def _release_claim(conn, genome_id: str, environment_id: int) -> None:
     """Возвращает геном в пул кандидатов после неудачной попытки (откат)
     -- НЕ трогает строку, если она уже реально продвинута (promoted_strategy
@@ -374,6 +410,11 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
     num = PROFILE_NUMBERS[profile]
     proto = PROFILE_PROTO.get(profile, "tls")
     target_kind, target_value = PROFILE_TARGETS[profile]
+    # Читаем ДО claim -- не требует БД (subprocess до set_strategy_cli.sh),
+    # безопасно вызвать рано. Раньше это же читалось повторно чуть ниже,
+    # уже после claim -- один вызов вместо двух, значение не меняется
+    # между ними в рамках одного прохода.
+    old_locked = _get_strategy(num, proto)
 
     conn = db.connect()
     try:
@@ -381,6 +422,21 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
         candidate = _claim_promotable(conn, profile, env_id, min_pulls)
         if not candidate:
             return f"{profile}: нет непродвинутого кандидата с {min_pulls}+ прогонами и 100% успехом -- пропуск."
+
+        champion = _get_champion_score(conn, profile, env_id, old_locked)
+        if (
+            champion
+            and champion["avg_score"] is not None
+            and candidate["avg_score"] is not None
+            and candidate["avg_score"] <= champion["avg_score"]
+        ):
+            _release_claim(conn, candidate["id"], env_id)
+            return (
+                f"{profile}: лучший кандидат (avg_score={candidate['avg_score']}, "
+                f"pulls={candidate['pulls']}) не превосходит текущую живую strategy={old_locked} "
+                f"(avg_score={champion['avg_score']}, pulls={champion['pulls']}) -- пропуск, чтобы "
+                "не тратить риск живой проверки/рестарта на равноценную или худшую замену."
+            )
 
         # Геном УЖЕ claimed (promoted_strategy=-1) -- с этого момента и до
         # конца функции при ЛЮБОМ исходе (успех/откат/неожиданное
@@ -398,7 +454,6 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
             if current_max is None or not current_max.isdigit():
                 _release_claim(conn, candidate["id"], env_id)
                 return f"{profile}: не удалось прочитать текущий max strategy= -- пропуск, кандидат освобождён."
-            old_locked = _get_strategy(num, proto)
 
             if target_kind == "template":
                 spec = f"TEMPLATE\n{target_value}\n"
