@@ -250,3 +250,30 @@ z2r_autobench's/z0r-panel's own CLAUDE.md. `Server A`/`Server B`/etc. and
   restores prior behavior. Leaving the migration applied but reverting
   only the Python change is also safe — unused columns, no other code
   reads them.
+
+## `ZENITH_PROMOTE_PROFILES` — decoupling promotion's profile list from generation's (2026-09-05)
+
+- Direct request: "как я помню автопродвижение должно работать только
+  для выбранных профилей, а не для всех" — before this, `ZENITH_PROFILES`
+  was ONE shared env var read by both `zenith_autorun.sh` (generation)
+  and `auto_promoter.py --loop` (promotion), so there was no way to
+  generate candidates for all 4 profiles while only letting promotion
+  touch a subset — whatever list you set applied to both at once.
+- `config.ZENITH_PROMOTE_PROFILES` (new) is read ONLY by
+  `auto_promoter.py --loop`, independent of `ZENITH_PROFILES`. Empty
+  (default) means "inherit `ZENITH_PROFILES` wholesale" — the exact
+  prior behavior — so a server that's never touched this new setting
+  keeps working identically; this is additive, not a breaking change.
+- Set via z0r item `18 -> 2` ("Профили для продвижения") — item 18
+  (previously a single-shot toggle with no menu at all) is now a real
+  submenu: `1` toggle on/off (same `zenith_promoter_toggle()` as before),
+  `2` this profile selector, `3` log tail. Item `21 -> 4 -> 5`
+  ("Профили") is unchanged and now documented as GENERATION-only
+  (`ZENITH_PROFILES`) — the two selectors are independent from here on;
+  changing one does not touch the other.
+- **Rollback**: revert the `config.py`/`auto_promoter.py` diff (single
+  self-contained change, `ZENITH_PROMOTE_PROFILES` added and read with a
+  fallback — removing it restores the old shared-variable behavior
+  exactly) plus the z0r menu commit for item 18. No schema/migration
+  involved — it's a plain env var, same idiom as `ZENITH_PROFILES`
+  itself.

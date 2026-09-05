@@ -562,16 +562,22 @@ if __name__ == "__main__":
 
     if args.loop:
         loop_profiles = runnable
-        if config.ZENITH_PROFILES:
-            selected = [p.strip() for p in config.ZENITH_PROFILES.split(",") if p.strip()]
+        # ZENITH_PROMOTE_PROFILES -- независимый от ZENITH_PROFILES выбор
+        # именно для продвижения (см. config.py) -- пусто = наследует
+        # ZENITH_PROFILES целиком, обратная совместимость со всеми
+        # серверами, которые никогда не трогали этот отдельный выбор.
+        profiles_source = config.ZENITH_PROMOTE_PROFILES or config.ZENITH_PROFILES
+        source_name = "ZENITH_PROMOTE_PROFILES" if config.ZENITH_PROMOTE_PROFILES else "ZENITH_PROFILES"
+        if profiles_source:
+            selected = [p.strip() for p in profiles_source.split(",") if p.strip()]
             filtered = [p for p in selected if p in runnable]
             unknown = [p for p in selected if p not in runnable]
             if unknown:
-                print(f"ZENITH_PROFILES: пропускаю неизвестные/непродвигаемые профили {unknown}", file=sys.stderr)
+                print(f"{source_name}: пропускаю неизвестные/непродвигаемые профили {unknown}", file=sys.stderr)
             if filtered:
                 loop_profiles = filtered
             else:
-                print(f"ZENITH_PROFILES={config.ZENITH_PROFILES!r} не содержит ни одного продвигаемого профиля -- использую полный список {runnable}", file=sys.stderr)
+                print(f"{source_name}={profiles_source!r} не содержит ни одного продвигаемого профиля -- использую полный список {runnable}", file=sys.stderr)
         run_loop(loop_profiles, args.environment, args.provider, args.min_pulls, args.interval_minutes)
     elif args.profile:
         print(try_promote(args.profile, args.environment, args.provider, args.min_pulls))
