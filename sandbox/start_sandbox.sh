@@ -60,7 +60,27 @@ fi
 
 "$SCRIPT_DIR/stop_sandbox.sh" 2>/dev/null || true
 
-"$NFQWS2_BIN" "@$LIVE_CONF"
+# nfqws2 запускается СРАЗУ от имени nobody (runuser, а не root + nfqws2's
+# собственный --user=nobody внутри себя, который раньше был в шаблоне).
+# Живой баг, найденный при диагностике VOICE_UDP-песочницы: файловые
+# capabilities (`setcap cap_net_admin,cap_net_raw+eip` на реальный бинарник,
+# см. CLAUDE.md/README для точной команды) применяются ТОЛЬКО в момент
+# execve() и зависят от того, executable запускается или нет -- не от
+# текущего uid процесса. Когда root напрямую запускал nfqws2, тот
+# унаследовал полный набор capabilities как root (это ожидаемо и не
+# зависит от setcap вообще), а затем сам вызывал setuid(nobody) через
+# собственный --user=nobody -- а syscall setuid() с ИЗМЕНЕНИЕМ uid с 0 на
+# ненулевой по умолчанию ОБНУЛЯЕТ effective/permitted/inheritable
+# capability sets процесса (если только сам процесс заранее не выставил
+# PR_SET_KEEPCAPS и не восстановил их через capset() -- похоже, что
+# nfqws2 этого не делает, или делает это до того, как реально биндит
+# NFQUEUE). Результат — `nfq_create_queue(): Operation not permitted`
+# именно на этапе после дропа привилегий, сколько setcap на файл ни
+# применяй, пока exec идёт от root. Fix: запускаем nfqws2 сразу от
+# nobody (runuser, execve() -> capability transition берёт F(permitted)
+# файла напрямую, не завися от текущих capabilities вызывающего
+# процесса), внутренний drop больше не нужен и убран из шаблона.
+runuser -u nobody -- "$NFQWS2_BIN" "@$LIVE_CONF"
 sleep 1
 
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
