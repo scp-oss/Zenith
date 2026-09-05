@@ -264,16 +264,22 @@ z2r_autobench's/z0r-panel's own CLAUDE.md. `Server A`/`Server B`/etc. and
   (default) means "inherit `ZENITH_PROFILES` wholesale" — the exact
   prior behavior — so a server that's never touched this new setting
   keeps working identically; this is additive, not a breaking change.
-- Set via z0r item `18 -> 2` ("Профили для продвижения") — renumbered to
-  item `27 -> 2` later the same day when 9 new per-profile items were
-  inserted at 16-24 (see z2r_autobench's own CLAUDE.md "z0r main menu
-  renumbering (2026-09-05)" for the full mapping) — item 18/27
-  (previously a single-shot toggle with no menu at all) is now a real
-  submenu: `1` toggle on/off (same `zenith_promoter_toggle()` as before),
-  `2` this profile selector, `3` log tail. Item `21 -> 4 -> 5`
-  ("Профили") is unchanged and now documented as GENERATION-only
-  (`ZENITH_PROFILES`) — the two selectors are independent from here on;
-  changing one does not touch the other.
+- Set via z0r item `18 -> 2` ("Профили для продвижения") — renumbered
+  TWICE the same day: first to `27 -> 2` when 9 new per-profile items
+  were inserted at 16-24, then to its current, final `11 -> 2` a few
+  hours later in the same conversation when the whole top-level menu was
+  reorganized again (status board up top, per-profile items moved to
+  1-9, "Подбор стратегии"/"Модули" collapsed into submenus — see
+  z2r_autobench's own CLAUDE.md "z0r main menu overhaul" for the full
+  mapping). Item 18/27/11 (previously a single-shot toggle with no menu
+  at all) is now a real submenu: `1` toggle on/off (same
+  `zenith_promoter_toggle()` as before, also relabeled "Autopromoter" in
+  the parent menu/status header the same day — display text only,
+  nothing here changed), `2` this profile selector, `3` log tail. Item
+  `21 -> 4 -> 5`, now `14 -> 2 -> 4 -> 5` ("Профили") is unchanged and
+  now documented as GENERATION-only (`ZENITH_PROFILES`) — the two
+  selectors are independent from here on; changing one does not touch
+  the other.
 - **Rollback**: revert the `config.py`/`auto_promoter.py` diff (single
   self-contained change, `ZENITH_PROMOTE_PROFILES` added and read with a
   fallback — removing it restores the old shared-variable behavior
