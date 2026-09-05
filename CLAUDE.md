@@ -174,3 +174,79 @@ z2r_autobench's/z0r-panel's own CLAUDE.md. `Server A`/`Server B`/etc. and
   claim). `git revert <this commit>` restores the exact prior behavior
   (promote first threshold-passing candidate, no champion comparison) —
   no schema change, no migration, nothing else depends on this.
+
+## Live-check quarantine for genomes that keep failing production traffic checks (2026-09-05)
+
+- **Found immediately after shipping the champion-comparison fix
+  above**: manually re-running `auto_promoter.py --profile DS_TLS`
+  promoted a genome (`47b030d9...`, family `multisplit`, avg_score 0.953
+  in sandbox, 6/6 runs) that then failed the live traffic check against
+  `discord.com` — confirmed via a manual repro with extended diagnostics
+  (`curl -v`): the TLS ClientHello was genuinely sent, then silence —
+  a clean timeout, not a TCP-level rejection. `_rollback()` correctly
+  restored the previous config/strategy, so production was never left
+  broken — but the underlying genome's `genome_scores` row is left
+  exactly as it was before the attempt (`promoted_strategy` reset back
+  to `NULL` by `_release_claim()`), meaning it remains the single
+  highest-`avg_score` unpromoted candidate and **will be picked again
+  on every future cycle, forever**, repeating the same real-traffic
+  restart + guaranteed-failure + rollback cycle with no progress and no
+  memory of the outcome.
+- **Root cause of the actual live-check failure itself, not this
+  repeated-selection problem**: already documented, not something this
+  fix addresses. See README.md's own "Известный разрыв достоверности
+  песочницы" section (referenced directly from `genome.py`'s
+  `PROFILE_FILTERS` comment) — the sandbox tests a genome's
+  `--lua-desync=` string directly, with no `--out-range=`/`--in-range=`
+  wrapping and no `circular_locked` per-host cache semantics, both of
+  which the real production block for every TCP profile actually uses.
+  A genome can therefore pass the sandbox 100% of the time and still
+  never actually get desync applied to it in production for certain
+  packet-size buckets. **Deliberately NOT attempting to close this gap
+  by reimplementing `--out-range=`/`--in-range=`/`circular_locked` in
+  the sandbox** — `-s34228`/`-s32768`'s exact semantics aren't
+  documented anywhere in this codebase, and this project's own stated
+  principle (see README.md's VOICE_UDP section: "не мутируем то, что не
+  можем объяснить документацией") is to not touch mechanisms it can't
+  explain from documentation — doubly so in the sandbox code this same
+  session just spent hours stabilizing. The live-check + rollback is the
+  intentional, working safety net for this exact gap; what's missing is
+  just memory of a genome having already tripped it.
+- **Fix**: `genome_scores` gains `live_check_fails`/
+  `live_check_quarantined_until` (migration
+  `007_genome_live_check_quarantine.sql`, same idempotent
+  information_schema-guarded pattern as 001-006). `try_promote()` now
+  calls `_record_live_check_failure()` specifically in the
+  `_real_traffic_check()`-failed branch (not other rollback causes like
+  a failed restart or a `set_strategy_cli.sh` failure — those are
+  infrastructure problems, not evidence the GENOME itself is bad) —
+  increments `live_check_fails`, and once it reaches
+  `LIVE_CHECK_FAIL_THRESHOLD` (2), sets
+  `live_check_quarantined_until = NOW() + LIVE_CHECK_QUARANTINE_DAYS`
+  (3 days). `_claim_promotable()`'s query excludes any genome whose
+  quarantine hasn't expired yet — same
+  `quarantined_until IS NULL OR quarantined_until < NOW()` shape already
+  used by `domain_pool` in `db_local.py::get_domains_for_profile()`, for
+  consistency with the one other place this codebase already does
+  exactly this kind of thing.
+- **Two failures, not one, before quarantine** — a single live-check
+  failure could plausibly be a transient network blip unrelated to the
+  genome itself (the same class of noise this session already ruled out
+  for settle-time, but not impossible in general); requiring a second
+  failure before quarantining avoids permanently sidelining a genome
+  over a one-off fluke. **Quarantine is time-limited (3 days), not
+  permanent** — deliberately, since the whole reason a genome might
+  systematically fail live traffic while passing sandbox is the
+  documented sandbox/production gap above, which is about the
+  *mechanism*, not the specific genome being permanently defective; a
+  fixed number is easier to reason about than an ever-growing exclusion
+  list, and 3 days is long enough to stop the immediate
+  every-cycle-forever churn without permanently writing the genome off
+  in case the DPI landscape or a future promotion actually changes the
+  outcome.
+- **Rollback**: `git revert` this commit plus running
+  `ALTER TABLE genome_scores DROP COLUMN live_check_fails, DROP COLUMN
+  live_check_quarantined_until;` against the live `z2r_genome` DB fully
+  restores prior behavior. Leaving the migration applied but reverting
+  only the Python change is also safe — unused columns, no other code
+  reads them.

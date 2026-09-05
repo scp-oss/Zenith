@@ -142,6 +142,13 @@ CREATE TABLE genome_scores (
                                                       -- promote.py -- сам скрипт это НЕ пишет, только печатает
                                                       -- инструкцию; колонку заполняет панель по явному действию
                                                       -- человека, см. db/migrations/003_promoted_strategy.sql)
+    live_check_fails INT NOT NULL DEFAULT 0,         -- сколько раз подряд auto_promoter.py::_real_traffic_check()
+                                                      -- проваливался ПОСЛЕ применения этого генома в проде (не
+                                                      -- другие причины отката вроде неудачного restart) -- см.
+                                                      -- db/migrations/007_genome_live_check_quarantine.sql
+    live_check_quarantined_until TIMESTAMP NULL,     -- пока не истёк -- геном исключён из будущего отбора
+                                                      -- (_claim_promotable()), тот же паттерн, что уже есть у
+                                                      -- domain_pool.quarantined_until
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (genome_id, environment_id)
 );

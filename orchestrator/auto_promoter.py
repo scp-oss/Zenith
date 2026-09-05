@@ -66,6 +66,12 @@ import db
 from promote import PROFILE_NUMBERS, PROFILE_PROTO
 
 SETTLE_SECONDS = 3
+# Сколько раз ЖИВАЯ проверка (не другие причины отката) должна провалиться
+# подряд для ОДНОГО генома, прежде чем он временно исключается из отбора --
+# см. CLAUDE.md "Live-check quarantine". 2, не 1 -- единичный провал может
+# быть разовой сетевой помехой, не обязательно виной самого генома.
+LIVE_CHECK_FAIL_THRESHOLD = 2
+LIVE_CHECK_QUARANTINE_DAYS = 3
 SET_STRATEGY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/set_strategy_cli.sh"
 PROMOTE_APPLY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/promote_apply_cli.sh"
 
@@ -309,6 +315,7 @@ def _claim_promotable(conn, profile: str, environment_id: int, min_pulls: int):
            WHERE gs.environment_id = %s AND g.family != 'control'
              AND gs.pulls >= %s AND gs.successes = gs.pulls
              AND gs.promoted_strategy IS NULL
+             AND (gs.live_check_quarantined_until IS NULL OR gs.live_check_quarantined_until < NOW())
            ORDER BY avg_score DESC
            LIMIT 1
            FOR UPDATE""",
@@ -371,6 +378,29 @@ def _mark_promoted(conn, genome_id: str, environment_id: int, strategy_n: int) -
     cur.execute(
         "UPDATE genome_scores SET promoted_strategy=%s WHERE genome_id=%s AND environment_id=%s",
         (strategy_n, genome_id, environment_id),
+    )
+
+
+def _record_live_check_failure(conn, genome_id: str, environment_id: int) -> None:
+    """Вызывается ТОЛЬКО когда откат вызван провалом именно живой проверки
+    (_real_traffic_check()) -- НЕ для других причин отката (неудачный
+    restart/set_strategy_cli.sh) -- те про инфраструктуру, не про то, что
+    сам геном плохой. Без этого _rollback() просто освобождает claim
+    (promoted_strategy обратно в NULL), и тот же самый геном, всё ещё
+    лидер по avg_score, выбирался бы заново на каждом следующем цикле
+    бесконечно -- см. CLAUDE.md "Live-check quarantine" для живого случая,
+    который это обнаружил (DS_TLS, geном 47b030d9..., discord.com)."""
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE genome_scores
+           SET live_check_fails = live_check_fails + 1,
+               live_check_quarantined_until = IF(
+                   live_check_fails + 1 >= %s,
+                   NOW() + INTERVAL %s DAY,
+                   live_check_quarantined_until
+               )
+           WHERE genome_id=%s AND environment_id=%s""",
+        (LIVE_CHECK_FAIL_THRESHOLD, LIVE_CHECK_QUARANTINE_DAYS, genome_id, environment_id),
     )
 
 
@@ -489,6 +519,7 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
 
             traffic_ok, traffic_detail = _real_traffic_check(conn, profile)
             if not traffic_ok:
+                _record_live_check_failure(conn, candidate["id"], env_id)
                 rollback_msg = _rollback(conn, profile, num, proto, backup_path, old_locked, candidate["id"], env_id)
                 return f"{rollback_msg} Причина: живая проверка не прошла -- {traffic_detail}."
 
