@@ -15,11 +15,24 @@ def get_seeds(profile: str) -> list:
 def _voice_udp_seeds(profile: str) -> list:
     """Все взяты 1:1 из реального боевого конфига (profile 6,
     circular_locked:key=6:proto=udp:allow_nohost=1), см.
-    genome.PROFILE_FILTERS["VOICE_UDP"] и genome.UDP_FAKE_BLOBS. Осознанно
-    НЕ включает out_range= -- в манула zapret2 такого per-instance
-    аргумента нет (только CLI-уровневый --out-range=), встречается в
-    config.default автора, но семантика не подтверждена документацией --
-    не мутируем то, что не можем объяснить."""
+    genome.PROFILE_FILTERS["VOICE_UDP"] и genome.UDP_FAKE_BLOBS.
+
+    out_range= (2026-10-08): раньше осознанно НЕ включался -- в мануале
+    zapret2 такого per-instance аргумента нет (только CLI-уровневый
+    --out-range=), семантика не подтверждена документацией, "не мутируем
+    то, что не можем объяснить". Пересмотрено после живого инцидента
+    2026-10-08 (strategy=35 автопродвинута на тесте в одном регионе,
+    реально работала в 1 из 12 голосовых регионов Discord) -- ручной
+    скрининг всех 41 боевой стратегии по нескольким регионам нашёл
+    strategy=17 (fake:blob=0x00:repeats=6:out_range=-n2) единственным
+    кандидатом, прошедшим все 3 тестовых региона, и именно смена
+    out_range (при том же blob/repeats) явно отличала её от соседних
+    strategy=8 (та же комбинация, out_range=-d10, 1/3). Семантика
+    по-прежнему не подтверждена мануалом -- см. Genome.out_range и
+    mutate.mutate_out_range, это остаётся эмпирическим направлением, не
+    документированным. strategy=17 заведена сидом явно (ниже), чтобы
+    бандит мутировал от уже подтверждённо рабочей точки, а не только
+    открывал out_range= с нуля через mutate_out_range на других сидах."""
     return [
         Genome(profile=profile, family="fake", fake_payload="stun_fake", repeats=3),
         Genome(profile=profile, family="fake", fake_payload="discord_fake", repeats=3),
@@ -31,6 +44,8 @@ def _voice_udp_seeds(profile: str) -> list:
         Genome(profile=profile, family="udplen", udplen_increment=4, udplen_min=20),
         Genome(profile=profile, family="send", ttl_mode="autottl:0,3-200", repeats=2),
         Genome(profile=profile, family="fake", fake_payload="stun_fake", ttl_mode="autottl:0,3-20", repeats=4),
+        # Боевая strategy=17, 2026-10-08 -- см. докстринг выше.
+        Genome(profile=profile, family="fake", fake_payload="0x00", repeats=6, out_range="-n2"),
     ]
 
 

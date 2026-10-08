@@ -197,6 +197,32 @@ def mutate_to_send(g: Genome) -> Genome:
     )
 
 
+# Значения, реально встречающиеся в боевом /opt/zapret2/config для
+# профиля 6 (per-instance out_range=, см. docstring Genome.out_range) --
+# цикл НЕ включает ничего не подтверждённого живым конфигом. -n* первыми
+# -- живой инцидент 2026-10-08: strategy=17 (out_range=-n2) единственная
+# из 41 боевой стратегии прошла все 3 тестовых региона в скрининге,
+# strategy=8 (тот же blob=0x00:repeats=6, но out_range=-d10) -- только
+# 1/3. Недостаточно данных, чтобы утверждать, что -n* в целом лучше -d*
+# (DPI-ответ шумный/вероятностный, см. тот же инцидент -- повторные
+# прогоны одного и того же генома давали разный результат), но раз уж
+# всё равно перебирать -- начинаем с того, что уже показало себя лучше.
+VOICE_OUT_RANGE_VALUES = (None, "-n2", "-n3", "-n4", "-d2", "-d3", "-d4", "-d5", "-d8", "-d10", "-d100")
+
+
+def mutate_out_range(g: Genome) -> Genome:
+    """Только для VOICE_UDP family=fake -- см. VOICE_OUT_RANGE_VALUES выше
+    и Genome.out_range docstring про то, почему этот параметр вообще
+    появился в модели (раньше осознанно не мутировался, т.к. семантика не
+    подтверждена мануалом -- остаётся неподтверждённой, это ЭМПИРИЧЕСКИЙ
+    оператор, не документированный)."""
+    if g.filter_type != "udp/443" or g.family != "fake":
+        return replace(g, source="mutation", mutation_op="mutate_out_range")
+    idx = VOICE_OUT_RANGE_VALUES.index(g.out_range) if g.out_range in VOICE_OUT_RANGE_VALUES else -1
+    nxt = VOICE_OUT_RANGE_VALUES[(idx + 1) % len(VOICE_OUT_RANGE_VALUES)]
+    return replace(g, out_range=nxt, source="mutation", mutation_op="mutate_out_range")
+
+
 def mutate_add_ipfrag(g: Genome) -> Genome:
     """Только для VOICE_UDP family=fake -- ipfrag_pos_udp/ipfrag_disorder
     (standard ipfrag), реальное боевое значение pos=8 (кратно 8, как того
@@ -249,6 +275,7 @@ OPERATORS = {
     "mutate_to_udplen": mutate_to_udplen,
     "mutate_to_send": mutate_to_send,
     "mutate_add_ipfrag": mutate_add_ipfrag,
+    "mutate_out_range": mutate_out_range,
 }
 
 # Порядок эскалации со слов автора z2r: TTL не проходит -> autottl -> DPI
@@ -281,6 +308,15 @@ OPERATORS = {
 # "смена семейства", той же логикой, что mutate_to_multidisorder/
 # mutate_to_hostfakesplit для TCP -- сначала пробуем варианты внутри
 # текущего family, потом уже меняем family целиком.
+#
+# mutate_out_range (добавлен 2026-10-08) поставлен ПЕРЕД остальными
+# VOICE_UDP-специфичными операторами, а не после -- единственный найденный
+# в тот день сигнал сильнее "смены семейства целиком" (см. его докстринг
+# и Genome.out_range): within-family изменение, которое уже на живых
+# данных того же дня отличало проходящую все 3 региона strategy=17 от
+# почти идентичной strategy=8 (1/3). Остаётся эмпирическим, не
+# документированным -- приоритет по уже увиденному результату, не по
+# уверенности в механизме.
 ESCALATION_ORDER = [
     "mutate_ttl_fixed",
     "mutate_ttl_autottl",
@@ -299,6 +335,7 @@ ESCALATION_ORDER = [
     "mutate_add_disorder_after",
     "mutate_add_midhost",
     "mutate_add_host_template",
+    "mutate_out_range",
     "mutate_add_ipfrag",
     "mutate_to_udplen",
     "mutate_to_send",

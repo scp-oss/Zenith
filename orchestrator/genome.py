@@ -160,6 +160,26 @@ class Genome:
     udplen_pattern: Optional[str] = None    # udplen only -- blob name or 0xHEX literal
     ipfrag_pos_udp: Optional[int] = None    # standard ipfrag -- confirmed real usage: VOICE_UDP strategy=4/24/27/28/32
     ipfrag_disorder: bool = False           # standard ipfrag
+    # VOICE_UDP only, family=fake -- per-instance out_range= (NOT the same as
+    # the CLI-level --out-range= filter flag TCP profiles use). Deliberately
+    # left out of the model until 2026-10-08: the zapret2 manual doesn't
+    # document a per-instance out_range= argument, so its real semantics
+    # were unconfirmed (see seeds.py git history) and "we don't mutate what
+    # we can't explain". Re-added after a live incident that day: VOICE_UDP
+    # strategy=35 (no out_range=) was auto-promoted on single-region sandbox
+    # testing but only actually worked in 1 of 12 real Discord voice
+    # regions; a manual region-by-region screen of the existing 41 boевых
+    # strategies found strategy=17 (fake:blob=0x00:repeats=6:out_range=-n2)
+    # as the only one clearing all 3 harder test regions, and specifically
+    # swapping JUST its out_range (same blob/repeats, different out_range)
+    # moved the pass rate a lot -- e.g. strategy=8 is blob=0x00:repeats=6
+    # with out_range=-d10 instead of -n2 and only cleared 1/3. Still don't
+    # have documented semantics (best guess: -nN targets by packet count,
+    # -dN by some distance/offset -- unconfirmed), so this stays an
+    # EMPIRICAL mutation axis, not a documented one -- see mutate_out_range
+    # in mutate.py, which only cycles values actually seen in the live
+    # config, not invented ones.
+    out_range: Optional[str] = None
     source: str = "seed"                  # seed | mutation | crossover
     parent1_id: Optional[str] = None
     parent2_id: Optional[str] = None
@@ -184,6 +204,8 @@ class Genome:
             extra.append(f"ipfrag_pos_udp={self.ipfrag_pos_udp}")
         if self.ipfrag_disorder:
             extra.append("ipfrag_disorder")
+        if self.out_range:
+            extra.append(f"out_range={self.out_range}")
         return extra
 
     def render_args(self) -> str:
@@ -248,6 +270,7 @@ class Genome:
                 "udplen_pattern": self.udplen_pattern,
                 "ipfrag_pos_udp": self.ipfrag_pos_udp,
                 "ipfrag_disorder": self.ipfrag_disorder,
+                "out_range": self.out_range,
             },
             ensure_ascii=False,
         )
