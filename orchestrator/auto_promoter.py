@@ -214,6 +214,69 @@ PROFILE_EXTRA_URL = {
 }
 
 
+# Закрывает ИМЕННО ТУ дыру, о которой честно предупреждает докстринг
+# _real_traffic_check ("эта проверка для VOICE_UDP остаётся слабее... не
+# прятать его молча") -- найдено на практике 2026-10-08: боевая
+# strategy=35 прошла sandbox rank_voice.sh (единственный тестовый
+# голосовой канал, регион Discord выбирал автоматически) и была
+# продвинута, но реально держит голос только в регионе us-central --
+# все остальные 11 регионов Discord (ручной тест человеком по разным
+# каналам + скрининг всех 41 стратегии) рвутся по честному 30s
+# connect()-таймауту. Тот же класс бага, что PROFILE_EXTRA_URL уже чинит
+# для YT_TLS (один домен "работает", реальный клиент -- нет), просто для
+# voice роль "другого домена" играет "другой голосовой регион".
+#
+# POST /probe к z2r_test-voice-bot (добавлен 2026-10-08, см. его
+# докстринг handle_probe) -- тестирует ЧЕРЕЗ ПЕСОЧНИЦУ Zenith, не напрямую
+# прод-nfqws2, НО это та же физическая DPI-коробка между этим сервером и
+# Discord на пути пакетов -- для вопроса "пройдёт ли эта стратегия DPI
+# для этого региона" песочница даёт тот же ответ, что и прод (ровно
+# почему rank_voice.sh вообще тестирует через неё, см. её докстринг про
+# живой инцидент 2026-08-07, когда тестирование НАПРЯМУЮ через прод
+# ломало голос всем пользователям на время теста).
+VOICE_UDP_PROBE_URL = "http://127.0.0.1:8765/probe"
+VOICE_UDP_PROBE_TIMEOUT = 35
+VOICE_UDP_REGIONS = [
+    "brazil", "hongkong", "india", "japan", "rotterdam", "singapore",
+    "southafrica", "sydney", "us-central", "us-east", "us-south", "us-west",
+]
+# Не require ВСЕ 12 -- единичный регион иногда может шуметь сам по себе
+# (не DPI, а обычная сетевая помеха/перегрузка конкретного
+# voice-сервера Discord), и это НЕ повод откатывать иначе явно лучшую
+# стратегию. 10/12 -- осознанный компромис: заметно строже, чем "работает
+# хоть где-то" (это и был весь баг), но не requires идеальной
+# стопроцентной картины с первого раза.
+VOICE_UDP_MIN_REGIONS_OK = 10
+
+
+def _voice_udp_region_check(strategy_n: str) -> tuple:
+    """Прогоняет strategy_n через z2r_test-voice-bot по всем
+    VOICE_UDP_REGIONS (см. блок выше), 1 попытка на регион -- возвращает
+    (ok, detail), detail всегда перечисляет и прошедшие, и упавшие
+    регионы (а не только при провале), чтобы в логе/уведомлении было
+    видно реальную картину, а не только да/нет."""
+    passed, failed = [], []
+    for region in VOICE_UDP_REGIONS:
+        try:
+            out = subprocess.run(
+                ["curl", "-s", "-m", str(VOICE_UDP_PROBE_TIMEOUT), "-X", "POST",
+                 VOICE_UDP_PROBE_URL, "-H", "Content-Type: application/json",
+                 "-d", json.dumps({"strategy_n": int(strategy_n), "region": region})],
+                capture_output=True, text=True, timeout=VOICE_UDP_PROBE_TIMEOUT + 5,
+            )
+            resp = json.loads(out.stdout) if out.stdout.strip() else {}
+        except Exception as e:
+            resp = {"success": False, "note": f"probe exception: {type(e).__name__}: {e}"}
+        (passed if resp.get("success") else failed).append(region)
+
+    ok = len(passed) >= VOICE_UDP_MIN_REGIONS_OK
+    detail = (
+        f"регионы voice: {len(passed)}/{len(VOICE_UDP_REGIONS)} ok "
+        f"(порог {VOICE_UDP_MIN_REGIONS_OK}); упали: {', '.join(failed) if failed else '-'}"
+    )
+    return ok, detail
+
+
 def _probe_reachable(url: str, timeout: int = 8) -> bool:
     """Только "не 000" (реальный HTTP-код ЛЮБОЙ, не обрыв/таймаут) -- НЕ
     порог байт, как у _probe_real(). InnerTube API отвечает небольшим
@@ -256,14 +319,22 @@ def _real_traffic_check(conn, profile: str) -> tuple:
     domain_pool -- ровно то, что promote.py уже давно печатает человеку
     в чеклисте ("После переключения — проверить живым трафиком... на
     КАЖДОМ домене профиля"), просто теперь исполняется, а не только
-    напоминается. VOICE_UDP пропускается -- нет HTTP-домена для curl
-    (см. domain_pool 'discord-voice-test' placeholder, min_bytes=0),
-    честного эквивалента живой Discord-проверки без второго похода в
-    z2r_test-voice-bot тут нет -- эта проверка для VOICE_UDP остаётся
-    слабее (только is-active/get), знать об этом ограничении важно
-    оператору, не прятать его молча."""
+    напоминается.
+
+    VOICE_UDP -- нет HTTP-домена для curl, HTTP-эквивалентом домена
+    служат голосовые РЕГИОНЫ Discord (см. _voice_udp_region_check выше и
+    её докстринг про живой инцидент 2026-10-08: strategy=35 прошла
+    единственный тестовый регион и была продвинута, реально работая
+    только в us-central). До 2026-10-08 эта проверка для VOICE_UDP была
+    безусловным True (только is-active/get) -- именно поэтому тот баг
+    вообще проскочил в прод незамеченным."""
     if profile == "VOICE_UDP":
-        return True, "VOICE_UDP -- живая HTTP-проверка недоступна, пропуск (см. докстринг)"
+        num = PROFILE_NUMBERS[profile]
+        proto = PROFILE_PROTO.get(profile, "tls")
+        strategy_n = _get_strategy(num, proto)
+        if not strategy_n or not strategy_n.isdigit():
+            return False, f"не удалось прочитать текущую strategy= профиля {profile} для проверки по регионам"
+        return _voice_udp_region_check(strategy_n)
     domains = db.get_domains_for_profile(conn, profile)
     if not domains:
         return True, "нет доменов в domain_pool для этого профиля -- нечем проверить, пропуск"
