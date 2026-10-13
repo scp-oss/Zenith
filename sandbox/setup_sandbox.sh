@@ -69,7 +69,12 @@ for u in "$SANDBOX_USER" "$VOICE_BOT_USER"; do
 done
 
 # --- 2. свободный номер очереди ---
-used_queues="$(iptables -t mangle -S 2>/dev/null | grep -oE 'queue-num [0-9]+' | awk '{print $2}')"
+# `|| true` на grep -- на свежем сервере (ещё ни одного NFQUEUE-правила
+# в mangle, живой случай первого MTS-деплоя 2026-10-13) grep не находит
+# ни одного совпадения и возвращает 1; под set -eo pipefail это бралось
+# как статус ВСЕГО пайплайна (rightmost non-zero, не последняя команда),
+# и скрипт падал сразу после создания юзеров, до единого iptables-правила.
+used_queues="$(iptables -t mangle -S 2>/dev/null | grep -oE 'queue-num [0-9]+' | awk '{print $2}' || true)"
 qnum="$SANDBOX_QUEUE_START"
 while echo "$used_queues" | grep -qx "$qnum"; do
   qnum=$((qnum + 1))
