@@ -88,7 +88,22 @@ CREATE TABLE domain_pool (
     -- истории) -- один и тот же host/path законно должен независимо
     -- существовать под несколькими профилями сразу (напр. www.youtube.com
     -- одновременно в списках YT_TLS и YT_QUIC_UDP).
-    UNIQUE KEY uniq_profile_host_path (profile_hint, host, path)
+    --
+    -- path(480), не полный path -- найдено 2026-10-13 на чистом деплое
+    -- (MTS/Penza): полный (profile_hint, host, path) на utf8mb4 даёт
+    -- (32+255+512)*4 = 3196 байт, выше лимита InnoDB (3072 байт при
+    -- ROW_FORMAT=DYNAMIC, default в MySQL 8) -- CREATE TABLE падал с
+    -- "Specified key was too long", НИ ОДНА таблица после domain_pool
+    -- (experiments/genome_scores/operator_stats/ban_events) не
+    -- создавалась следом. Этот файл при этом никогда не проверялся
+    -- живым "с нуля" прогоном: на NETH-4 таблица старше этой правки
+    -- (миграция 006 там вообще ни разу не накатывалась -- живёт со
+    -- старым узким uniq_host_path (host, path), см. ДСП 2026-10-13).
+    -- 480*4=1920 + 255*4=1020 + 32*4=128 = 3068, под лимитом с запасом.
+    -- Коллизия потребовала бы двух РАЗНЫХ путей с одинаковыми первыми
+    -- 480 символами под одним и тем же профилем -- на практике путей
+    -- такой длины в domain_pool не бывает вообще (см. INSERT ниже).
+    UNIQUE KEY uniq_profile_host_path (profile_hint, host, path(480))
 );
 
 -- Стартовые домены — те же самые, что уже использует z2r_autobench
