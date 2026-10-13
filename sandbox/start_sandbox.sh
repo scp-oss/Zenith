@@ -112,6 +112,22 @@ fi
 #     на повторный bind именно EPERM, а не EBUSY -- проверяется через
 #     `cat /proc/net/netfilter/nfnetlink_queue`. См. усиленную очистку в
 #     stop_sandbox.sh ниже.
+#
+# debug.log (найдено 2026-10-13, деплой на MTS/Penza): тот же класс
+# проблемы, что уже решена для PIDFILE выше (комментарий у его
+# объявления) -- nobody может ДОПИСЫВАТЬ в уже существующий debug.log
+# (нужно только право записи на сам файл), но не может его СОЗДАТЬ
+# (sandbox/ root:root, nobody не может писать в саму директорию). На
+# NETH-4 это работало только потому, что файл уже существовал с какого-то
+# более раннего запуска -- на чистом сервере первый же старт падает:
+# nfqws2 уходит в fallback/не поднимается, exit 1, "cannot create
+# .../nfqws2_sandbox.debug.log". В отличие от pidfile, путь к debug.log
+# задан в самом шаблоне конфига (--debug=@.../nfqws2_sandbox.debug.log) и
+# упоминается в README/ошибках -- проще один раз touch+chown его здесь,
+# чем переносить в /tmp и расходиться с документацией.
+DEBUG_LOG="$SCRIPT_DIR/nfqws2_sandbox.debug.log"
+touch "$DEBUG_LOG"
+chown nobody "$DEBUG_LOG"
 runuser -u nobody -- "$NFQWS2_BIN" "@$LIVE_CONF"
 sleep 1
 
