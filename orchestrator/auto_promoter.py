@@ -696,12 +696,35 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
         conn.close()
 
 
+# Файл событий для z2r_test-voice-bot (2026-11-13): бот работает от
+# zenith-voice-bot и не может читать journalctl этого юнита, поэтому
+# РЕАЛЬНЫЕ действия (продвижение/откат/исключение) дублируются сюда одной
+# строкой; «нет кандидата -- пропуск» не пишем, это шум.
+EVENTS_FILE = os.environ.get("ZENITH_PROMOTER_EVENTS", os.path.join(os.path.dirname(os.path.abspath(__file__)), "promoter_events.log"))
+_EVENT_MARKERS = ("продвинут как", "откат", "ОТКАТ", "НЕОЖИДАННОЕ", "НУЖНА РУЧНАЯ")
+
+
+def _log_event(line: str) -> None:
+    if not any(m in line for m in _EVENT_MARKERS):
+        return
+    try:
+        new = not os.path.exists(EVENTS_FILE)
+        with open(EVENTS_FILE, "a") as f:
+            f.write(line.replace("\n", " ") + "\n")
+        if new:
+            os.chmod(EVENTS_FILE, 0o644)
+    except OSError as e:
+        print(f"не смог записать событие в {EVENTS_FILE}: {e}", file=sys.stderr)
+
+
 def run_loop(profiles: list, environment_name: str, provider: str, min_pulls: int, interval_minutes: int) -> None:
     idx = 0
     while True:
         profile = profiles[idx % len(profiles)]
         idx += 1
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {try_promote(profile, environment_name, provider, min_pulls)}", flush=True)
+        line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {try_promote(profile, environment_name, provider, min_pulls)}"
+        print(line, flush=True)
+        _log_event(line)
         time.sleep(interval_minutes * 60)
 
 
