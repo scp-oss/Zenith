@@ -63,10 +63,18 @@ PROFILE_FILTERS = {
     # фиксированный домен из domain_pool -- резолвится динамически через
     # yt-dlp на каждый раунд заново, см. gv_resolver.py и main.py.
     "GV_TLS": [
-        "--filter-tcp=443 --filter-l7=tls",
-        "--hostlist-domains=googlevideo.com",
-        f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
-        "--payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello",
+        # 2026-11-13: GV_TLS в песочнице матчится по порту, а не по
+        # --filter-l7=tls/--hostlist-domains: wssize_ramp обязан увидеть
+        # самый первый SYN (окно и Window Scale задаются именно в нём), а
+        # на SYN ни SNI, ни l7 ещё неизвестны -- профиль с hostlist его не
+        # поймал бы. В бою ramp-профиль выбирается так же «до SNI» -- по
+        # метке соединения к IP из списка googlevideo (zator beta.15,
+        # --filter-mark). Песочница видит только трафик zenith-sandbox, а во
+        # время GV-раунда он идёт исключительно на googlevideo, так что
+        # широкий фильтр здесь ничего лишнего не захватывает.
+        "--filter-l3=ipv4",
+        "--filter-tcp=443",
+        "--payload=tls_client_hello",
     ],
     "RKN_TLS": [
         "--filter-tcp=80,443,2053,2083,2087,2096,8443 --filter-l7=tls",
@@ -180,6 +188,16 @@ class Genome:
     # in mutate.py, which only cycles values actually seen in the live
     # config, not invented ones.
     out_range: Optional[str] = None
+    # GV_TLS only -- параметры wssize_ramp (zator googlevideo-fix-beta.15,
+    # lua/wssize-ramp.lua): уменьшенное окно/Window Scale в SYN и до
+    # подтверждения первых `open` байт ответа, затем full -- компенсирует
+    # масштаб на всех поздних пакетах, lite -- отпускает поток. Ответ на
+    # обновление ТСПУ 2026-11, которое разбирает и трафик сервер->клиент.
+    # None -- без ramp (чистая ClientHello-стратегия, как раньше).
+    ramp_mode: Optional[str] = None       # None | 'full' | 'lite'
+    ramp_wsize: Optional[int] = None      # окно до открытия, 0..65535 (дефолт 1)
+    ramp_scale: Optional[int] = None      # целевой Window Scale, 0..14 (дефолт 1)
+    ramp_open: Optional[int] = None       # сколько байт ответа подтвердить до открытия (дефолт 1)
     source: str = "seed"                  # seed | mutation | crossover
     parent1_id: Optional[str] = None
     parent2_id: Optional[str] = None
@@ -248,8 +266,29 @@ class Genome:
             head += ":" + ":".join(extra)
         return f"--lua-desync={head}"
 
+    def render_ramp(self) -> Optional[str]:
+        if not self.ramp_mode:
+            return None
+        return (f"--lua-desync=wssize_ramp:mode={self.ramp_mode}:wsize={self.ramp_wsize if self.ramp_wsize is not None else 1}"
+                f":scale={self.ramp_scale if self.ramp_scale is not None else 1}:open={self.ramp_open or 1}")
+
+    def render_lines(self) -> list:
+        """Строки профиля для песочницы (после фильтра из PROFILE_FILTERS).
+        Без ramp -- ровно [render_args()], как было. С ramp -- та же
+        раскладка диапазонов, что у боевого ramp-профиля zator beta.15:
+        wssize_ramp на всех пакетах (out/in-range=a, payload=all,empty),
+        затем ClientHello-стратегия только на начале потока."""
+        tls = self.render_args()
+        ramp = self.render_ramp()
+        if not ramp:
+            return [tls]
+        return ["--out-range=a", "--in-range=a", "--payload=all,empty", ramp,
+                "--out-range=-s34228", "--in-range=x", "--payload=tls_client_hello", tls]
+
     def compute_id(self) -> str:
         payload = f"{self.profile}:{self.render_args()}"
+        if self.render_ramp():
+            payload += f"|{self.render_ramp()}"
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def params_json(self) -> str:
@@ -271,6 +310,8 @@ class Genome:
                 "ipfrag_pos_udp": self.ipfrag_pos_udp,
                 "ipfrag_disorder": self.ipfrag_disorder,
                 "out_range": self.out_range,
+                **({"ramp_mode": self.ramp_mode, "ramp_wsize": self.ramp_wsize,
+                    "ramp_scale": self.ramp_scale, "ramp_open": self.ramp_open} if self.ramp_mode else {}),
             },
             ensure_ascii=False,
         )

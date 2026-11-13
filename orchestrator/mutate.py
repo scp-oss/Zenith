@@ -245,6 +245,72 @@ def mutate_add_host_template(g: Genome) -> Genome:
     return replace(g, host_template="ozon.ru", source="mutation", mutation_op="mutate_add_host_template")
 
 
+# --- wssize_ramp (только GV_TLS, см. Genome.ramp_*) ---
+RAMP_SCALES = (1, 2, 4, 6)
+RAMP_WSIZES = (1, 16, 128, 1024)
+RAMP_OPENS = (1, 4096, 65536)
+
+
+def _cycle(values, cur, default):
+    try:
+        return values[(values.index(cur) + 1) % len(values)]
+    except ValueError:
+        return default
+
+
+def mutate_ramp_mode(g: Genome) -> Genome:
+    """None -> full -> lite -> None (полный цикл: включить ramp, облегчить, убрать)."""
+    if g.profile != "GV_TLS":
+        return replace(g, source="mutation", mutation_op="mutate_ramp_mode")
+    nxt = {None: "full", "full": "lite", "lite": None}[g.ramp_mode]
+    kw = dict(ramp_mode=nxt)
+    if nxt and g.ramp_wsize is None:
+        kw.update(ramp_wsize=1, ramp_scale=1, ramp_open=1)
+    if not nxt:
+        kw.update(ramp_wsize=None, ramp_scale=None, ramp_open=None)
+    return replace(g, **kw, source="mutation", mutation_op="mutate_ramp_mode")
+
+
+def _ramp_base(g: Genome) -> dict:
+    return dict(ramp_mode=g.ramp_mode or "full", ramp_wsize=g.ramp_wsize if g.ramp_wsize is not None else 1,
+                ramp_scale=g.ramp_scale if g.ramp_scale is not None else 1, ramp_open=g.ramp_open or 1)
+
+
+def mutate_ramp_scale(g: Genome) -> Genome:
+    """Больше scale -- быстрее поток, но крупнее сегменты ответа (риск DPI)."""
+    if g.profile != "GV_TLS":
+        return replace(g, source="mutation", mutation_op="mutate_ramp_scale")
+    b = _ramp_base(g); b["ramp_scale"] = _cycle(RAMP_SCALES, b["ramp_scale"], 2)
+    return replace(g, **b, source="mutation", mutation_op="mutate_ramp_scale")
+
+
+def mutate_ramp_wsize(g: Genome) -> Genome:
+    if g.profile != "GV_TLS":
+        return replace(g, source="mutation", mutation_op="mutate_ramp_wsize")
+    b = _ramp_base(g); b["ramp_wsize"] = _cycle(RAMP_WSIZES, b["ramp_wsize"], 16)
+    return replace(g, **b, source="mutation", mutation_op="mutate_ramp_wsize")
+
+
+def mutate_ramp_open(g: Genome) -> Genome:
+    if g.profile != "GV_TLS":
+        return replace(g, source="mutation", mutation_op="mutate_ramp_open")
+    b = _ramp_base(g); b["ramp_open"] = _cycle(RAMP_OPENS, b["ramp_open"], 4096)
+    return replace(g, **b, source="mutation", mutation_op="mutate_ramp_open")
+
+
+RAMP_OPERATORS = ("mutate_ramp_mode", "mutate_ramp_scale", "mutate_ramp_wsize", "mutate_ramp_open")
+
+
+def operators_for(profile: str) -> list:
+    """Порядок эскалации с учётом профиля: ramp-операторы есть только у
+    GV_TLS и идут первыми (главная ось для googlevideo после обновления
+    ТСПУ), у остальных профилей их нет вовсе -- иначе UCB тратил бы на
+    заведомые no-op раунды YT/RKN/DS (unseen-операторы пробуются первыми)."""
+    if profile == "GV_TLS":
+        return list(RAMP_OPERATORS) + [op for op in ESCALATION_ORDER if op not in RAMP_OPERATORS]
+    return [op for op in ESCALATION_ORDER if op not in RAMP_OPERATORS]
+
+
 def _add_fooling(existing: str, addition: str) -> str:
     if not existing:
         return addition
@@ -276,6 +342,10 @@ OPERATORS = {
     "mutate_to_send": mutate_to_send,
     "mutate_add_ipfrag": mutate_add_ipfrag,
     "mutate_out_range": mutate_out_range,
+    "mutate_ramp_mode": mutate_ramp_mode,
+    "mutate_ramp_scale": mutate_ramp_scale,
+    "mutate_ramp_wsize": mutate_ramp_wsize,
+    "mutate_ramp_open": mutate_ramp_open,
 }
 
 # Порядок эскалации со слов автора z2r: TTL не проходит -> autottl -> DPI

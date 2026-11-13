@@ -116,6 +116,11 @@ PROMOTE_APPLY_CLI = f"{config.Z2R_AUTOBENCH_DIR}/promote_apply_cli.sh"
 _PROFILE_TARGETS_DEFAULTS = {
     "YT_TLS": ("template", "z2r_tcp_tls_common"),
     "RKN_TLS": ("template", "z2r_tcp_tls_common"),
+    # GV_TLS (2026-11-13): профиль 2 в боевом конфиге берёт стратегии из того
+    # же общего шаблона (#Z2R_AUTO_STANDARD_2 -> --import=z2r_tcp_tls_common),
+    # ClientHello-часть генома продвигается так же, как у YT/RKN. ramp-часть
+    # -- отдельно, в Z2R_WSSIZE_RAMP_* (см. _apply_ramp_params).
+    "GV_TLS": ("template", "z2r_tcp_tls_common"),
     "DS_TLS": ("header", [
         f"--filter-tcp=80,443,2053,2083,2087,2096,8443 --hostlist={config.Z2R_BASE}/extra_strats/TCP_Discord.txt",
         f"--hostlist-exclude={config.Z2R_BASE}/lists/netrogat.txt",
@@ -314,6 +319,82 @@ def _probe_real(host: str, path: str, min_bytes: int, timeout: int = 8) -> tuple
     return bytes_ >= min_bytes, bytes_
 
 
+RAMP_VARS = ("Z2R_WSSIZE_RAMP_ENABLE", "Z2R_WSSIZE_RAMP_MODE", "Z2R_WSSIZE_RAMP_WSIZE",
+             "Z2R_WSSIZE_RAMP_SCALE", "Z2R_WSSIZE_RAMP_OPEN")
+
+
+def _genome_params(conn, genome_id: str) -> dict:
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT params_json FROM genomes WHERE id=%s", (genome_id,))
+    row = cur.fetchone()
+    if not row:
+        return {}
+    pj = row["params_json"]
+    return json.loads(pj) if isinstance(pj, str) else (pj or {})
+
+
+def _apply_ramp_params(params: dict) -> str:
+    """Переносит wssize_ramp-гены лучшего GV_TLS-генома в боевой конфиг zator
+    beta (Z2R_WSSIZE_RAMP_*): геном с ramp -> ENABLE=1 + его mode/wsize/
+    scale/open; геном БЕЗ ramp -> ENABLE=0 (раз он выиграл по скорости при
+    100% успеха, ramp здесь только тормозит). Вызывается ПОСЛЕ
+    promote_apply_cli.sh apply -- его backup уже снят с полного конфига, так
+    что _rollback() восстанавливает и эти переменные. Если в конфиге нет
+    ramp-переменных (сервер без zator beta) -- ничего не трогаем."""
+    path = config.ZAPRET2_CONFIG_PATH
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+    except OSError as e:
+        return f"ramp: не прочитал {path}: {e}"
+    if not any(l.startswith("Z2R_WSSIZE_RAMP_ENABLE=") for l in lines):
+        return "ramp: в конфиге нет Z2R_WSSIZE_RAMP_* (zator beta не установлена) -- только ClientHello-часть"
+    mode = params.get("ramp_mode")
+    want = {"Z2R_WSSIZE_RAMP_ENABLE": "1" if mode else "0"}
+    if mode:
+        want.update({
+            "Z2R_WSSIZE_RAMP_MODE": str(mode),
+            "Z2R_WSSIZE_RAMP_WSIZE": str(params.get("ramp_wsize") if params.get("ramp_wsize") is not None else 1),
+            "Z2R_WSSIZE_RAMP_SCALE": str(params.get("ramp_scale") if params.get("ramp_scale") is not None else 1),
+            "Z2R_WSSIZE_RAMP_OPEN": str(params.get("ramp_open") or 1),
+        })
+    out = []
+    for l in lines:
+        key = l.split("=", 1)[0]
+        if key in want and not l.startswith((" ", "\t", "#")):
+            out.append(f"{key}={want[key]}\n")
+        else:
+            out.append(l)
+    with open(path, "w") as f:
+        f.writelines(out)
+    return "ramp: " + (", ".join(f"{k.replace('Z2R_WSSIZE_RAMP_', '').lower()}={v}" for k, v in want.items()))
+
+
+def _gv_live_check(attempts: int = 3, need_ok: int = 2) -> tuple:
+    """GV_TLS: domain_pool у профиля -- заглушка googlevideo.com/ (404 на
+    1.5 КБ), реальная проверка -- закачка до 4 МБ видеопотока с СЕРВЕРА
+    GOOGLE (не кэша провайдера) обычным путём хоста, т.е. через боевой
+    zapret2 с только что применёнными стратегией и ramp."""
+    import gv_resolver
+    oks, details = 0, []
+    for _ in range(attempts):
+        url, ip, google = gv_resolver.resolve_google_served()
+        if not url:
+            details.append("resolve-fail")
+            continue
+        try:
+            out = subprocess.run(["curl", "-s", "-o", "/dev/null", "-r", "0-3999999", "--connect-timeout", "5",
+                                  "--max-time", "15", "-w", "%{http_code} %{size_download} %{time_total}", url],
+                                 capture_output=True, text=True, timeout=20)
+            code, b, t = (out.stdout.split() + ["000", "0", "0"])[:3]
+        except Exception:
+            code, b, t = "000", "0", "0"
+        ok = code == "206" and int(b) >= 1_000_000
+        oks += ok
+        details.append(f"{ip}:{code}/{int(b) // 1000}KB/{float(t):.1f}s")
+    return oks >= need_ok, f"GV live {oks}/{attempts} ({', '.join(details)})"
+
+
 def _real_traffic_check(conn, profile: str) -> tuple:
     """Живая проверка ПОСЛЕ restart+set, по всем доменам профиля из
     domain_pool -- ровно то, что promote.py уже давно печатает человеку
@@ -335,6 +416,8 @@ def _real_traffic_check(conn, profile: str) -> tuple:
         if not strategy_n or not strategy_n.isdigit():
             return False, f"не удалось прочитать текущую strategy= профиля {profile} для проверки по регионам"
         return _voice_udp_region_check(strategy_n)
+    if profile == "GV_TLS":
+        return _gv_live_check()
     domains = db.get_domains_for_profile(conn, profile)
     if not domains:
         return True, "нет доменов в domain_pool для этого профиля -- нечем проверить, пропуск"
@@ -572,6 +655,9 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
             strategy_n = apply_out.stdout.strip()
             backup_line = next((l for l in apply_out.stderr.splitlines() if l.startswith("backup: ")), "")
             backup_path = backup_line[len("backup: "):].strip()
+            ramp_note = ""
+            if profile == "GV_TLS":
+                ramp_note = " " + _apply_ramp_params(_genome_params(conn, candidate["id"]))
 
             # ВАЖНО: restart ПЕРЕД set, не наоборот -- см. promote.py "circular_locked
             # держит max strategy= в памяти процесса без TTL, вычисляет один раз при
@@ -597,7 +683,7 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
             _mark_promoted(conn, candidate["id"], env_id, int(strategy_n))
             return (
                 f"{profile}: геном {candidate['id'][:12]} продвинут как strategy={strategy_n} "
-                f"(avg_score={candidate['avg_score']}, pulls={candidate['pulls']}, {traffic_detail})."
+                f"(avg_score={candidate['avg_score']}, pulls={candidate['pulls']}, {traffic_detail}).{ramp_note}"
             )
         except Exception as e:
             _release_claim(conn, candidate["id"], env_id)
@@ -610,12 +696,35 @@ def try_promote(profile: str, environment_name: str, provider: str, min_pulls: i
         conn.close()
 
 
+# Файл событий для z2r_test-voice-bot (2026-11-13): бот работает от
+# zenith-voice-bot и не может читать journalctl этого юнита, поэтому
+# РЕАЛЬНЫЕ действия (продвижение/откат/исключение) дублируются сюда одной
+# строкой; «нет кандидата -- пропуск» не пишем, это шум.
+EVENTS_FILE = os.environ.get("ZENITH_PROMOTER_EVENTS", os.path.join(os.path.dirname(os.path.abspath(__file__)), "promoter_events.log"))
+_EVENT_MARKERS = ("продвинут как", "откат", "ОТКАТ", "НЕОЖИДАННОЕ", "НУЖНА РУЧНАЯ")
+
+
+def _log_event(line: str) -> None:
+    if not any(m in line for m in _EVENT_MARKERS):
+        return
+    try:
+        new = not os.path.exists(EVENTS_FILE)
+        with open(EVENTS_FILE, "a") as f:
+            f.write(line.replace("\n", " ") + "\n")
+        if new:
+            os.chmod(EVENTS_FILE, 0o644)
+    except OSError as e:
+        print(f"не смог записать событие в {EVENTS_FILE}: {e}", file=sys.stderr)
+
+
 def run_loop(profiles: list, environment_name: str, provider: str, min_pulls: int, interval_minutes: int) -> None:
     idx = 0
     while True:
         profile = profiles[idx % len(profiles)]
         idx += 1
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {try_promote(profile, environment_name, provider, min_pulls)}", flush=True)
+        line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {try_promote(profile, environment_name, provider, min_pulls)}"
+        print(line, flush=True)
+        _log_event(line)
         time.sleep(interval_minutes * 60)
 
 

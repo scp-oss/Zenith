@@ -15,6 +15,9 @@ _REWRITE_PREFIXES = (
     "--filter-tcp=", "--filter-udp=", "--filter-l7=",
     "--hostlist=", "--hostlist-exclude=", "--hostlist-domains=",
     "--payload=", "--lua-desync=",
+    # GV_TLS + wssize_ramp (genome.render_lines) пишет диапазоны и L3-фильтр
+    # -- их тоже надо вычищать между геномами, иначе они «прилипнут».
+    "--out-range=", "--in-range=", "--filter-l3=",
 )
 
 # Живой случай на Server B (Provider B) 2026-08-26: apply_raw() возвращал только bool,
@@ -27,6 +30,38 @@ _REWRITE_PREFIXES = (
 # сюда, чтобы вызывающий код мог сам решить, показывать их или нет.
 LAST_ERROR = ""
 
+# Общий лок песочницы (2026-11-13): песочницу делят Zenith (TCP-геномы) и
+# z2r_test-voice-bot (голосовые пробы autotune/Zenith VOICE_UDP). Без лока
+# бот каждые ~13 с переписывал конфиг своей голосовой стратегией прямо
+# посреди TCP-раунда -- геном мерился в чужом конфиге (ложные провалы).
+# apply_raw() берёт лок и ДЕРЖИТ его, вызывающий отпускает release() сразу
+# после пробы. Бот открывает тот же файл только на чтение -- для flock
+# этого достаточно.
+import fcntl as _fcntl
+import os as _os
+LOCK_FILE = f"{config.SANDBOX_DIR}/.sandbox.lock"
+_lock_fd = None
+
+
+def acquire():
+    global _lock_fd
+    if _lock_fd is not None:
+        return
+    fd = _os.open(LOCK_FILE, _os.O_RDONLY | _os.O_CREAT, 0o644)
+    _fcntl.flock(fd, _fcntl.LOCK_EX)
+    _lock_fd = fd
+
+
+def release():
+    global _lock_fd
+    if _lock_fd is None:
+        return
+    try:
+        _fcntl.flock(_lock_fd, _fcntl.LOCK_UN)
+    finally:
+        _os.close(_lock_fd)
+        _lock_fd = None
+
 
 def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
     """Применяет произвольный набор строк (фильтр + один или несколько
@@ -37,6 +72,7 @@ def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
     (см. genome.PROFILE_FILTERS), не одна строка: реальный боевой фильтр
     профиля -- это несколько --hostlist=/--payload= строк, не только
     --filter-tcp=."""
+    acquire()
     try:
         with open(CONF_PATH) as f:
             lines = f.readlines()
@@ -76,7 +112,11 @@ def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
                 "разберись руками."
             )
 
-    kept = [ln for ln in lines if not ln.strip().startswith(_REWRITE_PREFIXES)]
+    # Строки, не начинающиеся с "--" (и не комментарии) -- обрывки чужих
+    # многострочных записей (видели на NETH-4 2026-11-13: "y=1",
+    # "l=0,3-20:out_range=-d10:strategy=16"), выкидываем.
+    kept = [ln for ln in lines if not ln.strip().startswith(_REWRITE_PREFIXES)
+            and (not ln.strip() or ln.strip().startswith(("--", "#")))]
     for line in profile_filter_lines:
         kept.append(line + "\n")
     for line in lua_desync_lines:
@@ -95,4 +135,5 @@ def apply_raw(profile_filter_lines: list, lua_desync_lines: list) -> bool:
 
 
 def apply_genome(g) -> bool:
-    return apply_raw(genome.PROFILE_FILTERS[g.profile], [g.render_args()])
+    lines = g.render_lines() if hasattr(g, "render_lines") else [g.render_args()]
+    return apply_raw(genome.PROFILE_FILTERS[g.profile], lines)
