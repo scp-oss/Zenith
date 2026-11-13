@@ -95,6 +95,11 @@ if [ ! -f "$LIVE_CONF" ]; then
   fi
 fi
 
+# nfqws2 запускается от nobody (см. ниже) -- конфиг должен быть ему читаем
+# при ЛЮБОМ umask того, кто ставил (стенд 2026-11-13: установка под umask 077
+# дала 600 -> "could not load config file", песочница не стартовала).
+chmod 644 "$LIVE_CONF" "$QUEUE_FILE" 2>/dev/null || true
+
 "$SCRIPT_DIR/stop_sandbox.sh" 2>/dev/null || true
 
 # nfqws2 запускается СРАЗУ от имени nobody через runuser, не как root с
