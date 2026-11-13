@@ -46,17 +46,18 @@ MAX_SETTLE_SECONDS = 60
 MIN_BYTES_THRESHOLD = 65536
 
 
-def pick_operator_ucb(op_stats: dict, total_pulls: int) -> str:
+def pick_operator_ucb(op_stats: dict, total_pulls: int, profile: str = "") -> str:
     """UCB1 по фиксированному списку операторов (mutate.ESCALATION_ORDER).
     Операторы без накопленной статистики пробуются в порядке цепочки
     эскалации, а не рандомно — так v1 нащупывает разумный путь ещё до
     того, как накопится реальная статистика по конкретному провайдеру."""
-    unseen = [op for op in mutate.ESCALATION_ORDER if op not in op_stats]
+    order = mutate.operators_for(profile) if profile else mutate.ESCALATION_ORDER
+    unseen = [op for op in order if op not in op_stats]
     if unseen:
         return unseen[0]
 
     best_op, best_score = None, -1.0
-    for op in mutate.ESCALATION_ORDER:
+    for op in order:
         stat = op_stats[op]
         pulls = stat["pulls"] or 1
         mean = stat["total_reward"] / pulls
@@ -124,11 +125,11 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
             return False
         time.sleep(BASE_SETTLE_SECONDS)
         if profile == "GV_TLS":
-            gv_url = gv_resolver.resolve_googlevideo_url()
+            gv_url, _gv_ip, _gv_google = gv_resolver.resolve_google_served()
             if not gv_url:
                 print("  не удалось резолвить googlevideo.com URL через yt-dlp, control-проверка невозможна", file=sys.stderr)
                 return False
-            success, bytes_, latency_ms = tester.probe_url(gv_url, domain["min_bytes"])
+            success, bytes_, latency_ms = tester.probe_media(gv_url)
         else:
             success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
     print(f"  control-проверка: {'OK' if success else 'fail'} ({bytes_} bytes)")
@@ -172,14 +173,15 @@ def run(profile: str, rounds: int, environment_name: str, provider: str, domain_
         else:
             op_stats = db.get_operator_stats(conn, env_id, filter_type)
             total_op_pulls = sum(s["pulls"] for s in op_stats.values()) or 1
-            op_name = pick_operator_ucb(op_stats, total_op_pulls)
+            op_name = pick_operator_ucb(op_stats, total_op_pulls, profile)
 
             parent_rows = db.get_genomes_with_scores(conn, profile, env_id)
             parent = pick_parent_ucb(parent_rows, profile) if parent_rows else random.choice(seed_pool)
             genome = mutate.apply_operator(parent, op_name)
 
         gid = db.insert_genome(conn, genome)
-        print(f"[{round_no}/{rounds}] {profile} op={op_name or 'seed'} -> {genome.render_args()}")
+        _ramp = genome.render_ramp() if hasattr(genome, "render_ramp") else None
+        print(f"[{round_no}/{rounds}] {profile} op={op_name or 'seed'} -> {genome.render_args()}" + (f" + {_ramp}" if _ramp else ""))
 
         if profile == "VOICE_UDP":
             # z2r_test-voice-bot применяет геном в СВОЕЙ песочнице сам
@@ -206,21 +208,30 @@ def run(profile: str, rounds: int, environment_name: str, provider: str, domain_
                 # через yt-dlp, иначе CDN-эдж залипает на одном video_id и
                 # бан одного эджа ложно валит весь прогон целиком (см.
                 # gv_resolver.py докстринг).
-                gv_url = gv_resolver.resolve_googlevideo_url()
+                gv_url, gv_ip, gv_google = gv_resolver.resolve_google_served()
                 if not gv_url:
                     print("  не удалось резолвить googlevideo.com URL через yt-dlp (сеть до youtube.com сама по себе не работает?), пропуск", file=sys.stderr)
                     continue
-                success, bytes_, latency_ms = tester.probe_url(gv_url, domain["min_bytes"])
+                if not gv_google:
+                    print(f"  (внимание: видео отдаёт не сервер Google, а {gv_ip} -- вероятно кэш провайдера, тест мягче реального)")
+                success, bytes_, latency_ms = tester.probe_media(gv_url)
+                if tester.LAST_MEDIA.get("http") in ("302", "403", "404", "503"):
+                    # Ответ HTTP-уровня от самого узла googlevideo (не тот узел/подпись),
+                    # к DPI и геному отношения не имеет -- раунд не засчитываем.
+                    print(f"  (тест недействителен: http={tester.LAST_MEDIA.get('http')}, раунд не засчитан)")
+                    continue
             else:
                 success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
-        reward = scoring.compute_reward(success, latency_ms)
+        reward = (scoring.compute_reward_throughput(success, bytes_, latency_ms) if profile == "GV_TLS"
+                  else scoring.compute_reward(success, latency_ms))
 
         db.record_experiment(conn, gid, env_id, domain["id"], success, bytes_, latency_ms)
         db.upsert_genome_score(conn, gid, env_id, success, reward)
         if op_name:
             db.upsert_operator_stat(conn, env_id, filter_type, op_name, reward)
 
-        print(f"  -> {'OK' if success else 'fail'} ({bytes_} bytes, {latency_ms}ms), домен={domain['host']}")
+        _extra = f", http={tester.LAST_MEDIA.get('http')}, {bytes_ / max(latency_ms, 1) / 1000:.2f} МБ/с" if profile == "GV_TLS" else ""
+        print(f"  -> {'OK' if success else 'fail'} ({bytes_} bytes, {latency_ms}ms{_extra}), домен={domain['host']}")
 
         # Слабых кандидатов будет много, сильных мало -- длинные полосы
         # подряд идущих провалов сами по себе норма на этой стадии, не

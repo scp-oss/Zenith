@@ -77,12 +77,22 @@ qnum="$(cat "$QUEUE_FILE")"
 # случай 2026-11-13, см. ensure_redirect.sh) -- восстанавливаем на каждый запуск.
 "$SCRIPT_DIR/ensure_redirect.sh" || true
 
+# wssize_ramp (GV_TLS-геномы) -- lua из zator beta. Подключаем, только если
+# файл есть: на сервере без беты лишний --lua-init уронил бы nfqws2.
+WSSIZE_LUA="${WSSIZE_LUA:-/opt/zator/lua/wssize-ramp.lua}"
+if [ -f "$LIVE_CONF" ] && [ -f "$WSSIZE_LUA" ] && ! grep -q 'wssize-ramp.lua' "$LIVE_CONF"; then
+  sed -i "/zapret-antidpi.lua/a --lua-init=@$WSSIZE_LUA" "$LIVE_CONF"
+fi
+
 # Живой конфиг генерим из шаблона только если его ещё нет — если он уже
 # существует, это значит оркестратор его уже переписал под конкретный
 # геном, и перезатирать эту работу шаблоном при каждом старте нельзя.
 if [ ! -f "$LIVE_CONF" ]; then
   sed -e "s#__QNUM__#$qnum#g" -e "s#__ZENITH_DIR__#$SCRIPT_DIR/..#g" -e "s#__FAKE_DIR__#$FAKE_DIR#g" "$TEMPLATE" > "$LIVE_CONF"
   echo "Сгенерирован $LIVE_CONF из шаблона (первый запуск)."
+  if [ -f "$WSSIZE_LUA" ] && ! grep -q 'wssize-ramp.lua' "$LIVE_CONF"; then
+    sed -i "/zapret-antidpi.lua/a --lua-init=@$WSSIZE_LUA" "$LIVE_CONF"
+  fi
 fi
 
 "$SCRIPT_DIR/stop_sandbox.sh" 2>/dev/null || true

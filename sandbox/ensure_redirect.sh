@@ -28,5 +28,18 @@ done
 if id "$VOICE_BOT_USER" >/dev/null 2>&1 && ! iptables -t mangle -C OUTPUT -m owner --uid-owner "$VOICE_BOT_USER" -p udp -m multiport --dports "$VOICE_UDP_PORTS" -j NFQUEUE --queue-num "$qnum" --queue-bypass 2>/dev/null; then
   iptables -t mangle -A OUTPUT -m owner --uid-owner "$VOICE_BOT_USER" -p udp -m multiport --dports "$VOICE_UDP_PORTS" -j NFQUEUE --queue-num "$qnum" --queue-bypass && added=$((added+1))
 fi
+# Первые ответные TCP-пакеты соединений песочницы (SYN-ACK) -- тоже в её
+# очередь: wssize_ramp (GV_TLS) по SYN-ACK узнаёт seq0 сервера и иначе
+# «открывается» на первом же ACK, т.е. ramp в песочнице вёл бы себя не как
+# в бою. Входящие по uid не матчатся, поэтому метим соединение на выходе
+# (CONNMARK 0x02000000, свой бит -- не путать с 0x01000000 исключения из
+# боевого zapret2) и ловим reply-пакеты 1..3 по этой метке.
+SB_CTMARK=0x02000000
+if ! iptables -t mangle -C OUTPUT -m owner --uid-owner "$SANDBOX_USER" -p tcp -j CONNMARK --or-mark "$SB_CTMARK" 2>/dev/null; then
+  iptables -t mangle -I OUTPUT 1 -m owner --uid-owner "$SANDBOX_USER" -p tcp -j CONNMARK --or-mark "$SB_CTMARK" && added=$((added+1))
+fi
+if ! iptables -t mangle -C INPUT -p tcp -m connmark --mark "$SB_CTMARK/$SB_CTMARK" -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 1:3 -j NFQUEUE --queue-num "$qnum" --queue-bypass 2>/dev/null; then
+  iptables -t mangle -A INPUT -p tcp -m connmark --mark "$SB_CTMARK/$SB_CTMARK" -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 1:3 -j NFQUEUE --queue-num "$qnum" --queue-bypass && added=$((added+1))
+fi
 [ "$added" -gt 0 ] && echo "!!! ensure_redirect: восстановлено $added правил(а) песочницы -> NFQUEUE $qnum (они пропадали -- тесты до этого шли мимо песочницы)" >&2
 exit 0

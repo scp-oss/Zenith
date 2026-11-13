@@ -9,7 +9,29 @@ from genome import Genome
 def get_seeds(profile: str) -> list:
     if profile == "VOICE_UDP":
         return _voice_udp_seeds(profile)
+    if profile == "GV_TLS":
+        return _gv_tls_seeds(profile)
     return _tcp_tls_seeds(profile)
+
+
+def _gv_tls_seeds(profile: str) -> list:
+    """GV_TLS (2026-11-13): обновление ТСПУ разбирает ответ сервера, одной
+    ClientHello-стратегии мало -- поэтому сиды сначала покрывают
+    wssize_ramp (дефолт автора zator beta.15: full, wsize=1, scale=1,
+    open=1, и его вариации), а ClientHello-часть берём из подтверждённо
+    рабочих для YouTube форм (multidisorder midsld, fake+tcp_md5).
+    Последние два сида -- без ramp, как контроль «что даёт сам ramp»."""
+    md = dict(profile=profile, family="multidisorder", pos="midsld")
+    fk = dict(profile=profile, family="fake", fake_payload="fake_default_tls", fooling="tcp_md5")
+    return [
+        Genome(**md, ramp_mode="full", ramp_wsize=1, ramp_scale=1, ramp_open=1),
+        Genome(**md, ramp_mode="lite", ramp_wsize=1, ramp_scale=1, ramp_open=1),
+        Genome(**md, ramp_mode="full", ramp_wsize=1, ramp_scale=2, ramp_open=1),
+        Genome(**md, ramp_mode="full", ramp_wsize=64, ramp_scale=1, ramp_open=4096),
+        Genome(**fk, ramp_mode="full", ramp_wsize=1, ramp_scale=1, ramp_open=1),
+        Genome(**md),
+        Genome(**fk),
+    ]
 
 
 def _voice_udp_seeds(profile: str) -> list:
