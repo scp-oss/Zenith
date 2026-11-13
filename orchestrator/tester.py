@@ -14,7 +14,7 @@ import config
 DEFAULT_TIMEOUT = 5
 
 
-def _curl_probe(url: str, min_bytes: int) -> tuple:
+def _curl_probe(url: str, min_bytes: int, extra: list = None) -> tuple:
     start = time.monotonic()
     bytes_ = 0
     try:
@@ -23,7 +23,7 @@ def _curl_probe(url: str, min_bytes: int) -> tuple:
                 "sudo", "-u", config.SANDBOX_USER, "curl", "-s", "-o", "/dev/null",
                 "-w", "%{size_download}",
                 "--connect-timeout", "3", "--max-time", str(DEFAULT_TIMEOUT),
-                url,
+                *(extra or []), url,
             ],
             capture_output=True, text=True, timeout=DEFAULT_TIMEOUT + 3,
         )
@@ -75,3 +75,16 @@ def probe_media(url: str, want_bytes: int = GV_MEDIA_WANT_BYTES, min_bytes: int 
         LAST_MEDIA.update(http="000", curl_rc=str(e)[:60])
     latency_ms = int((time.monotonic() - start) * 1000)
     return bytes_ >= min_bytes, bytes_, latency_ms
+
+
+def probe_both_tls(host: str, path: str, min_bytes: int) -> tuple:
+    """YT_TLS (2026-11-13): геном засчитывается, только если данные идут и
+    по TLS 1.2, и по TLS 1.3 -- тот же строгий критерий, что у health-check
+    autotune (PROBE_REQUIRE_BOTH_TLS=1). На Дом.ру боевая strategy=5 за
+    сутки 31 раз проходила только TLS 1.3 -- TV/старые клиенты (TLS 1.2) при
+    этом без YouTube, а песочница проверяла лишь дефолтный TLS 1.3 и таких
+    стратегий не отсеивала. Возвращает (оба_ок, min(bytes), сумма времени)."""
+    url = f"https://{host}{path}"
+    ok12, b12, ms12 = _curl_probe(url, min_bytes, ["--tlsv1.2", "--tls-max", "1.2"])
+    ok13, b13, ms13 = _curl_probe(url, min_bytes, ["--tlsv1.3"])
+    return ok12 and ok13, min(b12, b13), ms12 + ms13

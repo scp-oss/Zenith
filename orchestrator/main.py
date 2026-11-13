@@ -132,6 +132,7 @@ def verify_not_false_positive(conn, env_id: int, profile: str, domain: dict) -> 
             success, bytes_, latency_ms = tester.probe_media(gv_url)
         else:
             success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+    sandbox_apply.release()
     print(f"  control-проверка: {'OK' if success else 'fail'} ({bytes_} bytes)")
 
     control_gid = db.insert_control_genome(conn, profile, control)
@@ -220,8 +221,11 @@ def run(profile: str, rounds: int, environment_name: str, provider: str, domain_
                     # к DPI и геному отношения не имеет -- раунд не засчитываем.
                     print(f"  (тест недействителен: http={tester.LAST_MEDIA.get('http')}, раунд не засчитан)")
                     continue
+            elif profile == "YT_TLS":
+                success, bytes_, latency_ms = tester.probe_both_tls(domain["host"], domain["path"], domain["min_bytes"])
             else:
                 success, bytes_, latency_ms = tester.probe(domain["host"], domain["path"], domain["min_bytes"])
+        sandbox_apply.release()  # проба окончена -- песочница свободна для голосовых проб бота
         reward = (scoring.compute_reward_throughput(success, bytes_, latency_ms) if profile == "GV_TLS"
                   else scoring.compute_reward(success, latency_ms))
 
