@@ -174,3 +174,15 @@ def log_ban_event(domain_id: int, reason: str, cooldown_seconds: int, environmen
         body={"domain_id": domain_id, "reason": reason, "cooldown_seconds": cooldown_seconds},
         node_name=environment_name, node_provider=provider,
     )
+
+
+def record_voice_region_checks(sweep_id: str, strategy_n, results: list, source: str,
+                               environment_name: str, provider: str) -> dict:
+    return _request(
+        "POST", "/api/v1/db/voice_region_checks",
+        body={"sweep_id": str(sweep_id), "strategy_n": strategy_n, "source": source,
+              "results": [{"region": r["region"], "success": bool(r["success"]),
+                           "connect_ms": r.get("connect_ms") if isinstance(r.get("connect_ms"), int) else None,
+                           "note": (r.get("note") or "")[:255]} for r in results if r.get("success") is not None]},
+        node_name=environment_name, node_provider=provider,
+    )

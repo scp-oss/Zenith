@@ -103,3 +103,8 @@ def recent_domain_experiments(conn, domain_id, limit=5):
 
 def log_ban_event(conn, environment_id, domain_id, reason, cooldown_seconds):
     panel_client.log_ban_event(domain_id, reason, cooldown_seconds, conn.node_name, conn.node_provider)
+
+
+def record_voice_region_checks(conn, environment_id, sweep_id, strategy_n, results, source="sweep"):
+    return panel_client.record_voice_region_checks(sweep_id, strategy_n, results, source,
+                                                   conn.node_name, conn.node_provider)
