@@ -191,3 +191,20 @@ CREATE TABLE ban_events (
     cooldown_until  TIMESTAMP NOT NULL,
     resolved        BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+-- Прогон живой VOICE_UDP-стратегии по голосовым регионам Discord
+-- (z2r_autobench voice_region_sweep.sh), см. migrations/008_voice_region_checks.sql.
+CREATE TABLE voice_region_checks (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    environment_id  INT NOT NULL,
+    checked_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sweep_id        CHAR(36) NOT NULL,
+    source          VARCHAR(32) NOT NULL DEFAULT 'sweep',
+    strategy_n      INT NULL,
+    region          VARCHAR(32) NOT NULL,
+    success         BOOLEAN NOT NULL,
+    connect_ms      INT NULL,
+    note            VARCHAR(255) NULL,
+    KEY idx_vrc_env_time (environment_id, checked_at),
+    KEY idx_vrc_sweep (sweep_id)
+);

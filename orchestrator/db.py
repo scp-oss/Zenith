@@ -24,6 +24,7 @@ upsert_operator_stat = _impl.upsert_operator_stat
 get_operator_stats = _impl.get_operator_stats
 recent_domain_experiments = _impl.recent_domain_experiments
 log_ban_event = _impl.log_ban_event
+record_voice_region_checks = _impl.record_voice_region_checks
 
 # Только db_local.py (ZENITH_DB_MODE=docker) -- sync_client.py их
 # использует для push/pull локального буфера; в api-режиме буфера нет,
