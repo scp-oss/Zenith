@@ -83,7 +83,11 @@ def pick_parent_ucb(rows: list, profile: str):
         score = mean + bonus
         if score > best_score:
             best_row, best_score = row, score
-    return genome_mod.from_params(profile, json.loads(best_row["params_json"]), best_row["generation"])
+    params = best_row["params_json"]
+    # в режиме ZENITH_DB_MODE=api строка приходит уже разобранной (dict), в локальной БД -- JSON-строкой
+    if isinstance(params, (str, bytes, bytearray)):
+        params = json.loads(params)
+    return genome_mod.from_params(profile, params, best_row["generation"])
 
 
 def check_ban_suspected(conn, domain_id) -> bool:
