@@ -1,12 +1,15 @@
 [Unit]
 Description=Zenith periodic candidate generation (orchestrator/main.py on a rotating schedule)
-After=network-online.target
+After=network-online.target docker.service
 Wants=network-online.target
 
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
 [Service]
+# после отключения света: дождаться локальной MySQL (на нодах с ZENITH_DB_MODE=api сразу выходит)
+ExecStartPre=/opt/z2r_autobench/Zenith/wait_zenith_db.sh
+TimeoutStartSec=360
 Type=simple
 WorkingDirectory=/opt/z2r_autobench/Zenith
 ExecStart=/usr/bin/bash /opt/z2r_autobench/Zenith/zenith_autorun.sh

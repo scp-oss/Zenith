@@ -1,6 +1,6 @@
 [Unit]
 Description=Zenith autonomous promotion (auto_promoter.py --loop -- writes /opt/zapret2/config, restarts zapret2, WITHOUT a human)
-After=network-online.target zapret2.service
+After=network-online.target docker.service zapret2.service
 Wants=network-online.target
 # Wants=, не Requires= -- та же причина, что в autotune-daemon.service
 # (z2r_autobench): zapret2.service форкает nfqws2 в обход
@@ -13,6 +13,9 @@ StartLimitIntervalSec=300
 StartLimitBurst=5
 
 [Service]
+# после отключения света: дождаться локальной MySQL (на нодах с ZENITH_DB_MODE=api сразу выходит)
+ExecStartPre=/opt/z2r_autobench/Zenith/wait_zenith_db.sh
+TimeoutStartSec=360
 Type=simple
 WorkingDirectory=/opt/z2r_autobench/Zenith/orchestrator
 ExecStart=/opt/z2r_autobench/Zenith/orchestrator/venv/bin/python3 auto_promoter.py --loop
